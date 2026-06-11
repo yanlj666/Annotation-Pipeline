@@ -1,0 +1,9 @@
+import_mapping:
+  source_format: csv
+  fields:
+    conversation_id: "会话ID"
+    turns: "对话内容"
+  passthrough:
+    - "用户ID"
+    - "渠道"
+    - "下单状态"

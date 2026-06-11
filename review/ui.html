@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Annotation Review</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; color: #172026; background: #f6f7f9; }
+    main { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+    aside { border-right: 1px solid #d8dde3; background: #fff; overflow: auto; }
+    button { cursor: pointer; border: 1px solid #c9d1dc; background: #fff; border-radius: 6px; padding: 8px 10px; }
+    .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; }
+    .task:hover, .task.active { background: #eef4ff; }
+    section { padding: 24px; }
+    .turn, pre, textarea { background: #fff; border: 1px solid #d8dde3; border-radius: 6px; padding: 12px; }
+    .turn { margin: 10px 0; white-space: pre-wrap; }
+    .role { font-weight: 700; color: #334155; margin-bottom: 6px; }
+    textarea { box-sizing: border-box; width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin: 16px 0; }
+    .primary { background: #155eef; color: white; border-color: #155eef; }
+    .muted { color: #667085; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { max-height: 36vh; border-right: 0; border-bottom: 1px solid #d8dde3; } }
+  </style>
+</head>
+<body>
+  <main>
+    <aside>
+      <div class="toolbar" style="padding:12px"><button onclick="loadTasks()">刷新</button><span id="count" class="muted"></span></div>
+      <div id="tasks"></div>
+    </aside>
+    <section>
+      <h2 id="title">选择待审任务</h2>
+      <div id="conversation"></div>
+      <h3>Payload</h3>
+      <pre id="payload">{}</pre>
+      <h3>Annotation</h3>
+      <textarea id="annotation"></textarea>
+      <h3>Review Reason</h3>
+      <textarea id="reason" style="min-height:70px"></textarea>
+      <div class="toolbar"><button class="primary" onclick="submitReview()">提交审核</button><span id="message" class="muted"></span></div>
+    </section>
+  </main>
+  <script>
+    let currentId = null;
+    async function loadTasks() {
+      const res = await fetch('/api/tasks?status=labeled&limit=200');
+      const tasks = await res.json();
+      document.getElementById('count').textContent = `${tasks.length} 条`;
+      document.getElementById('tasks').innerHTML = tasks.map(t => `<button class="task" onclick="loadTask('${escapeAttr(t.task_id)}')">${escapeHtml(t.task_id)}<br><span class="muted">${escapeHtml(t.updated_at)}</span></button>`).join('');
+    }
+    async function loadTask(id) {
+      currentId = id;
+      const task = await (await fetch(`/api/tasks/${encodeURIComponent(id)}`)).json();
+      document.getElementById('title').textContent = id;
+      document.getElementById('conversation').innerHTML = task.turns.map(t => `<div class="turn"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
+      document.getElementById('payload').textContent = JSON.stringify(task.payload, null, 2);
+      document.getElementById('annotation').value = JSON.stringify(task.annotation || {}, null, 2);
+      document.getElementById('reason').value = '';
+      document.getElementById('message').textContent = '';
+    }
+    async function submitReview() {
+      if (!currentId) return;
+      let annotation;
+      try { annotation = JSON.parse(document.getElementById('annotation').value); }
+      catch (e) { document.getElementById('message').textContent = 'Annotation JSON 无效'; return; }
+      const res = await fetch(`/api/tasks/${encodeURIComponent(currentId)}/review`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({annotation, reason: document.getElementById('reason').value})
+      });
+      document.getElementById('message').textContent = res.ok ? '已提交' : '提交失败';
+      if (res.ok) loadTasks();
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    function escapeAttr(s) {
+      return String(s).replace(/[\\']/g, ch => `\\${ch}`);
+    }
+    loadTasks();
+  </script>
+</body>
+</html>

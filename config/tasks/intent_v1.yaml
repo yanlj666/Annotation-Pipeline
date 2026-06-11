@@ -1,0 +1,20 @@
+name: intent_v1
+description: Basic intent and sentiment labeling.
+prompt:
+  system: |
+    You are a careful data annotation model. Return only valid JSON that matches the schema.
+  user: |
+    Label this conversation.
+
+    Conversation:
+    {turns}
+
+    Business payload:
+    {payload}
+
+    Required JSON fields:
+    {schema}
+output_schema:
+  intent: { type: string }
+  sentiment: { type: string }
+  needs_followup: { type: boolean }
