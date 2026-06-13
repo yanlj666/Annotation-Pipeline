@@ -1,7 +1,7 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from src.engine import validate_output
 from src.store import Store
@@ -19,14 +19,20 @@ def run_server(db_path: str, host: str = "127.0.0.1", port: int = 8000, output_s
             parsed = urlparse(self.path)
             if parsed.path == "/":
                 return self._send(UI_PATH.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+            if parsed.path == "/api/schema":
+                return self._json(output_schema or {})
             if parsed.path == "/api/tasks":
                 qs = parse_qs(parsed.query)
-                status = qs.get("status", ["labeled"])[0]
+                status_arg = qs.get("status", ["labeled,reviewed"])[0]
+                statuses = None if status_arg == "all" else [s.strip() for s in status_arg.split(",") if s.strip()]
                 limit = int(qs.get("limit", ["100"])[0])
-                tasks = store.list_tasks(status, limit)
+                q = qs.get("q", [""])[0].strip() or None
+                sort = qs.get("sort", ["updated_at"])[0]
+                order = qs.get("order", ["desc"])[0]
+                tasks = store.list_tasks(statuses, limit, q=q, sort=sort, order=order)
                 return self._json([{k: v for k, v in t.items() if k != "turns"} for t in tasks])
             if parsed.path.startswith("/api/tasks/"):
-                task_id = parsed.path.rsplit("/", 1)[-1]
+                task_id = unquote(parsed.path.rsplit("/", 1)[-1])
                 task = store.get_task(task_id)
                 return self._json(task or {}, 404 if not task else 200)
             return self._json({"error": "not found"}, 404)
@@ -34,8 +40,11 @@ def run_server(db_path: str, host: str = "127.0.0.1", port: int = 8000, output_s
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
             if parsed.path.startswith("/api/tasks/") and parsed.path.endswith("/review"):
-                task_id = parsed.path.split("/")[-2]
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                task_id = unquote(parsed.path.split("/")[-2])
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                except json.JSONDecodeError:
+                    return self._json({"error": "request body must be JSON"}, 400)
                 annotation = body.get("annotation")
                 if not isinstance(annotation, dict):
                     return self._json({"error": "annotation must be object"}, 400)

@@ -39,6 +39,16 @@ def main() -> None:
     export = sub.add_parser("export")
     export.add_argument("--out", default="exports")
     export.add_argument("--task")
+    export.add_argument(
+        "--mark-exported",
+        action="store_true",
+        help="mark exported tasks as exported after writing files",
+    )
+    export.add_argument(
+        "--status",
+        default="reviewed",
+        help="comma-separated statuses to export, e.g. reviewed,exported",
+    )
 
     gold = sub.add_parser("gold-eval")
     gold.add_argument("gold_jsonl")
@@ -65,7 +75,20 @@ def main() -> None:
     elif args.command == "export":
         task_name = args.task or config.get("task")
         task_path = ROOT / "config" / "tasks" / f"{task_name}.yaml"
-        print(json.dumps(export_reviewed(store, str(task_path), config, args.out), ensure_ascii=False))
+        statuses = [s.strip() for s in args.status.split(",") if s.strip()]
+        print(
+            json.dumps(
+                export_reviewed(
+                    store,
+                    str(task_path),
+                    config,
+                    args.out,
+                    mark_exported=args.mark_exported,
+                    statuses=statuses,
+                ),
+                ensure_ascii=False,
+            )
+        )
     elif args.command == "gold-eval":
         task_name = args.task or config.get("task")
         task_config = load_task(task_name)

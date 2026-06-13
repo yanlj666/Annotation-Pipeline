@@ -7,3 +7,5 @@ import_mapping:
     - "用户ID"
     - "渠道"
     - "下单状态"
+    - "session_id"
+    - "conversation_id"
