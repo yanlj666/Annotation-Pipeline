@@ -93,6 +93,22 @@ class Store:
             row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         return self._decode(row) if row else None
 
+    def stats(self) -> dict[str, Any]:
+        counts = {status: 0 for status in sorted(STATUSES)}
+        with self.connect() as conn:
+            for row in conn.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"):
+                counts[row["status"]] = row["count"]
+            row = conn.execute(
+                "SELECT COUNT(*) AS total, MAX(updated_at) AS last_updated_at FROM tasks"
+            ).fetchone()
+        total = row["total"] if row else 0
+        return {
+            "counts": counts,
+            "total": total,
+            "last_updated_at": row["last_updated_at"] if row else None,
+            "database": str(self.db_path),
+        }
+
     def mark_labeled(self, task_id: str, annotation: dict[str, Any]) -> None:
         self._update(task_id, "labeled", annotation_json=json.dumps(annotation, ensure_ascii=False), error=None)
 

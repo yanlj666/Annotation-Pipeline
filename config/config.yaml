@@ -11,6 +11,9 @@ engine:
   max_retries: 3
   sample_size: null
   progress: true
+  log_dir: "logs"
+  alert_failure_rate: 0.3
+  alert_consecutive_failures: 5
 task: "intent_v1"
 database: "data/pipeline.db"
 export:

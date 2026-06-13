@@ -3,69 +3,193 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Annotation Review</title>
+  <title>Annotation Workspace</title>
   <style>
-    :root { color-scheme: light; --border:#d8dde3; --muted:#667085; --blue:#155eef; --bg:#f3f6fb; --card:#fff; }
-    body { margin: 0; font-family: Inter, Arial, sans-serif; color: #172026; background: var(--bg); }
-    main { display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
-    aside { border-right: 1px solid var(--border); background: #fff; overflow: auto; }
-    section { padding: 24px; overflow: auto; }
-    button, input, select { font: inherit; }
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --line: #d9e0ea;
+      --text: #172026;
+      --muted: #667085;
+      --blue: #155eef;
+      --green: #027a48;
+      --red: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); }
+    button, input, select, textarea { font: inherit; }
     button { cursor: pointer; border: 1px solid #c9d1dc; background: #fff; border-radius: 8px; padding: 8px 10px; }
-    input, select, textarea { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; box-sizing: border-box; }
-    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: #fbfcfe; }
-    .filter-row, .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .filter-row > * { flex: 1; min-width: 0; }
+    input, select, textarea { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+    textarea { width: 100%; min-height: 170px; font-family: Consolas, "SFMono-Regular", monospace; }
+    header { padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 18px; margin-bottom: 12px; }
+    h3 { font-size: 15px; margin-bottom: 10px; }
+    main { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 73px); }
+    aside { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; }
+    section { padding: 20px 24px 32px; overflow: auto; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .dashboard { display: grid; grid-template-columns: 1.1fr .9fr; gap: 14px; margin-bottom: 18px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .stats { display: grid; grid-template-columns: repeat(6, minmax(80px, 1fr)); gap: 8px; }
+    .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfe; }
+    .stat-value { font-size: 24px; font-weight: 700; }
+    .stat-label { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: #fbfcfe; }
+    .row, .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .row > input, .row > select { flex: 1; min-width: 0; }
     .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; display: block; }
     .task:hover, .task.active { background: #eef4ff; }
     .task-title { font-weight: 700; word-break: break-all; }
     .task-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
     .badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #eef2ff; color: #3538cd; }
-    .badge.reviewed { background: #ecfdf3; color: #027a48; }
-    .badge.failed { background: #fef3f2; color: #b42318; }
-    .muted { color: var(--muted); font-size: 13px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 14px 0; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
-    .turn { border-radius: 12px; padding: 12px; margin: 10px 0; white-space: pre-wrap; border: 1px solid var(--border); }
+    .badge.reviewed { background: #ecfdf3; color: var(--green); }
+    .badge.exported { background: #f0f9ff; color: #026aa2; }
+    .badge.failed { background: #fef3f2; color: var(--red); }
+    .turn { border-radius: 8px; padding: 12px; margin: 10px 0; white-space: pre-wrap; border: 1px solid var(--line); }
     .turn.user { background: #eff8ff; }
     .turn.assistant { background: #f8fafc; }
     .role { font-weight: 700; color: #334155; margin-bottom: 6px; }
     .primary { background: var(--blue); color: white; border-color: var(--blue); }
-    .danger { color: #b42318; }
-    .ok { color: #027a48; }
-    .annotation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-    .field-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fbfcfe; }
+    .danger { color: var(--red); }
+    .ok { color: var(--green); }
+    .annotation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .field-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfe; }
     .field-key { font-weight: 700; margin-bottom: 6px; }
-    pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px; overflow: auto; }
-    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--border); } }
+    pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 12px; overflow: auto; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      aside { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--line); }
+      .dashboard { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
+  <header>
+    <h1>Annotation Workspace</h1>
+    <div class="muted">&#24635;&#25511;&#29366;&#24577;&#12289;&#20154;&#24037;&#22797;&#26680;&#12289;&#25209;&#27880;&#23548;&#20986;&#21644;&#22833;&#36133;&#25490;&#26597;</div>
+  </header>
   <main>
     <aside>
       <div class="filters">
-        <div class="filter-row">
-          <select id="status"><option value="labeled,reviewed">待审+已审</option><option value="labeled">待审核</option><option value="reviewed">已审核</option><option value="failed">失败</option><option value="all">全部</option></select>
-          <select id="order"><option value="desc">最新优先</option><option value="asc">最早优先</option></select>
+        <div class="row">
+          <select id="status">
+            <option value="labeled,reviewed">&#24453;&#23457; + &#24050;&#23457;</option>
+            <option value="labeled">&#24453;&#23457;&#26680;</option>
+            <option value="reviewed">&#24050;&#23457;&#26680;</option>
+            <option value="exported">&#24050;&#23548;&#20986;</option>
+            <option value="failed">&#22833;&#36133;</option>
+            <option value="all">&#20840;&#37096;</option>
+          </select>
+          <select id="order">
+            <option value="desc">&#26368;&#26032;&#20248;&#20808;</option>
+            <option value="asc">&#26368;&#26089;&#20248;&#20808;</option>
+          </select>
         </div>
-        <div class="filter-row"><input id="query" placeholder="搜索 task_id / payload / reason"><button onclick="loadTasks()">搜索</button></div>
-        <div class="toolbar"><button onclick="loadTasks()">刷新</button><span id="count" class="muted"></span></div>
+        <div class="row">
+          <input id="query" placeholder="&#25628;&#32034; task_id / payload / &#25209;&#27880;">
+          <button onclick="loadTasks()">&#25628;&#32034;</button>
+        </div>
+        <div class="toolbar">
+          <button onclick="refreshAll()">&#21047;&#26032;</button>
+          <span id="count" class="muted"></span>
+        </div>
       </div>
       <div id="tasks"></div>
     </aside>
     <section>
-      <h2 id="title">选择待审任务</h2>
+      <div class="dashboard">
+        <div class="card">
+          <h2>&#36816;&#34892;&#29366;&#24577;</h2>
+          <div id="stats" class="stats"></div>
+          <div id="statsMeta" class="muted" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <h2>&#23548;&#20986;&#25209;&#27880;&#25968;&#25454;</h2>
+          <div class="row">
+            <select id="exportStatus">
+              <option value="reviewed">&#24050;&#23457;&#26680;</option>
+              <option value="reviewed,exported">&#24050;&#23457;&#26680; + &#24050;&#23548;&#20986;</option>
+              <option value="all">&#20840;&#37096;</option>
+            </select>
+            <input id="exportDir" value="exports/ui_export" aria-label="export directory">
+          </div>
+          <div class="toolbar" style="margin-top:10px">
+            <label><input id="markExported" type="checkbox"> &#23548;&#20986;&#21518;&#26631;&#35760;&#20026; exported</label>
+            <button class="primary" onclick="exportCases()">&#23548;&#20986;</button>
+          </div>
+          <div id="exportMessage" class="muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="dashboard">
+        <div class="card">
+          <h2>&#22833;&#36133;&#25688;&#35201;</h2>
+          <div id="failureSummary" class="muted"></div>
+          <pre id="failureRecent">[]</pre>
+        </div>
+        <div class="card">
+          <h2>&#22833;&#36133;&#25490;&#26597;&#25805;&#20316;</h2>
+          <div class="row">
+            <input id="failureExportPath" value="exports/failure_report.jsonl" aria-label="failure report path">
+          </div>
+          <div class="toolbar" style="margin-top:10px">
+            <button onclick="retryFailed()">&#37325;&#35797;&#22833;&#36133;&#20219;&#21153;</button>
+            <button onclick="exportFailures()">&#23548;&#20986;&#22833;&#36133;&#25253;&#21578;</button>
+          </div>
+          <div id="failureMessage" class="muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <h2 id="title">&#36873;&#25321;&#24453;&#23457;&#26680;&#20219;&#21153;</h2>
       <div id="summary" class="muted"></div>
-      <div class="card"><h3>Conversation</h3><div id="conversation"></div></div>
-      <div class="card"><h3>Payload</h3><pre id="payload">{}</pre></div>
-      <div class="card"><h3>Annotation Preview</h3><div id="annotationPreview" class="annotation-grid"></div></div>
-      <div class="card"><h3>Annotation JSON</h3><textarea id="annotation"></textarea></div>
-      <div class="card"><h3>Review Reason</h3><textarea id="reason" style="min-height:70px"></textarea></div>
-      <div class="toolbar"><button class="primary" onclick="submitReview()">提交/更新审核</button><span id="message" class="muted"></span></div>
+      <div class="card"><h3>&#23545;&#35805;&#20869;&#23481;</h3><div id="conversation"></div></div>
+      <div class="card"><h3>&#19994;&#21153;&#23383;&#27573;</h3><pre id="payload">{}</pre></div>
+      <div class="card"><h3>&#26631;&#27880;&#39044;&#35272;</h3><div id="annotationPreview" class="annotation-grid"></div></div>
+      <div class="card"><h3>&#26631;&#27880; JSON</h3><textarea id="annotation"></textarea></div>
+      <div class="card"><h3>&#22797;&#26680;&#25209;&#27880;</h3><textarea id="reason" style="min-height:80px"></textarea></div>
+      <div class="toolbar"><button class="primary" onclick="submitReview()">&#25552;&#20132;/&#26356;&#26032;&#23457;&#26680;</button><span id="message" class="muted"></span></div>
     </section>
   </main>
   <script>
     let currentId = null;
+    const labels = {
+      pending: '\u5f85\u6807\u6ce8',
+      labeled: '\u5f85\u5ba1\u6838',
+      reviewed: '\u5df2\u5ba1\u6838',
+      exported: '\u5df2\u5bfc\u51fa',
+      failed: '\u5931\u8d25',
+      total: '\u603b\u6570'
+    };
+
+    async function refreshAll() {
+      await Promise.all([loadStats(), loadFailures(), loadTasks()]);
+    }
+
+    async function loadStats() {
+      const stats = await (await fetch('/api/stats')).json();
+      const counts = stats.counts || {};
+      const items = ['pending', 'labeled', 'reviewed', 'exported', 'failed', 'total'];
+      document.getElementById('stats').innerHTML = items.map(key => `
+        <div class="stat">
+          <div class="stat-value">${escapeHtml(key === 'total' ? stats.total || 0 : counts[key] || 0)}</div>
+          <div class="stat-label">${labels[key]}</div>
+        </div>
+      `).join('');
+      document.getElementById('statsMeta').textContent =
+        `\u6570\u636e\u5e93\uff1a${stats.database || '-'} \u00b7 \u6700\u8fd1\u66f4\u65b0\uff1a${stats.last_updated_at || '-'}`;
+    }
+
+    async function loadFailures() {
+      const data = await (await fetch('/api/failures/summary')).json();
+      const counts = Object.entries(data.counts || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || '-';
+      document.getElementById('failureSummary').textContent =
+        `\u5931\u8d25\u603b\u6570\uff1a${data.total || 0} \u00b7 \u5206\u7c7b\uff1a${counts}`;
+      document.getElementById('failureRecent').textContent = JSON.stringify(data.recent || [], null, 2);
+    }
 
     async function loadTasks() {
       const params = new URLSearchParams({
@@ -78,7 +202,7 @@
       if (q) params.set('q', q);
       const res = await fetch(`/api/tasks?${params.toString()}`);
       const tasks = await res.json();
-      document.getElementById('count').textContent = `${tasks.length} 条`;
+      document.getElementById('count').textContent = `${tasks.length} \u6761`;
       document.getElementById('tasks').innerHTML = tasks.map(renderTaskButton).join('');
       document.querySelectorAll('.task').forEach(btn => btn.addEventListener('click', () => loadTask(btn.dataset.id)));
     }
@@ -88,7 +212,7 @@
       return `<button class="task${t.task_id === currentId ? ' active' : ''}" data-id="${escapeAttr(t.task_id)}">
         <div class="task-title">${escapeHtml(t.task_id)}</div>
         ${subtitle ? `<div class="muted">${escapeHtml(subtitle)}</div>` : ''}
-        <div class="task-meta"><span class="badge ${escapeAttr(t.status)}">${escapeHtml(t.status)}</span><span class="muted">${escapeHtml(t.updated_at)}</span></div>
+        <div class="task-meta"><span class="badge ${escapeAttr(t.status)}">${escapeHtml(t.status)}</span><span class="muted">${escapeHtml(t.updated_at || '')}</span></div>
       </button>`;
     }
 
@@ -96,7 +220,7 @@
       currentId = id;
       const task = await (await fetch(`/api/tasks/${encodeURIComponent(id)}`)).json();
       document.getElementById('title').textContent = id;
-      document.getElementById('summary').textContent = `${task.status || ''} · updated ${task.updated_at || ''}`;
+      document.getElementById('summary').textContent = `${task.status || ''} \u00b7 updated ${task.updated_at || ''}`;
       document.getElementById('conversation').innerHTML = (task.turns || []).map(t => `<div class="turn ${escapeAttr(t.role)}"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
       document.getElementById('payload').textContent = JSON.stringify(task.payload || {}, null, 2);
       document.getElementById('annotation').value = JSON.stringify(task.annotation || {}, null, 2);
@@ -109,7 +233,7 @@
     function renderAnnotationPreview(annotation) {
       document.getElementById('annotationPreview').innerHTML = Object.entries(annotation).map(([key, value]) => `
         <div class="field-card"><div class="field-key">${escapeHtml(key)}</div><div>${escapeHtml(formatValue(value))}</div></div>
-      `).join('') || '<span class="muted">暂无标注结果</span>';
+      `).join('') || '<span class="muted">\u6682\u65e0\u6807\u6ce8\u7ed3\u679c</span>';
     }
 
     async function submitReview() {
@@ -117,34 +241,95 @@
       let annotation;
       const message = document.getElementById('message');
       try { annotation = JSON.parse(document.getElementById('annotation').value); }
-      catch (e) { message.textContent = 'Annotation JSON 无效'; message.className = 'danger'; return; }
+      catch (e) { message.textContent = 'Annotation JSON \u65e0\u6548'; message.className = 'danger'; return; }
       const res = await fetch(`/api/tasks/${encodeURIComponent(currentId)}/review`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({annotation, reason: document.getElementById('reason').value})
       });
       if (res.ok) {
-        message.textContent = '已提交，可继续编辑后再次提交';
+        message.textContent = '\u5df2\u63d0\u4ea4\uff0c\u53ef\u7ee7\u7eed\u7f16\u8f91\u540e\u518d\u6b21\u63d0\u4ea4';
         message.className = 'ok';
         renderAnnotationPreview(annotation);
-        await loadTasks();
+        await refreshAll();
       } else {
         const body = await res.json().catch(() => ({}));
-        message.textContent = body.error || '提交失败';
+        message.textContent = body.error || '\u63d0\u4ea4\u5931\u8d25';
         message.className = 'danger';
       }
     }
 
+    async function exportCases() {
+      const msg = document.getElementById('exportMessage');
+      msg.textContent = '\u6b63\u5728\u5bfc\u51fa...';
+      msg.className = 'muted';
+      const statusValue = document.getElementById('exportStatus').value;
+      const statuses = statusValue === 'all' ? 'all' : statusValue.split(',');
+      const res = await fetch('/api/export', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          statuses,
+          output_dir: document.getElementById('exportDir').value.trim() || 'exports/ui_export',
+          mark_exported: document.getElementById('markExported').checked
+        })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        msg.textContent = `\u5df2\u5bfc\u51fa ${body.cases} \u6761\uff1a${body.cases_path}`;
+        msg.className = 'ok';
+        await refreshAll();
+      } else {
+        msg.textContent = body.error || '\u5bfc\u51fa\u5931\u8d25';
+        msg.className = 'danger';
+      }
+    }
+
+    async function retryFailed() {
+      const msg = document.getElementById('failureMessage');
+      msg.textContent = '\u6b63\u5728\u91cd\u8bd5\u5931\u8d25\u4efb\u52a1...';
+      msg.className = 'muted';
+      const res = await fetch('/api/label/retry-failed', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        msg.textContent = `\u91cd\u8bd5\u5b8c\u6210\uff1alabeled=${body.labeled || 0}, failed=${body.failed || 0}, log=${body.log_path || '-'}`;
+        msg.className = 'ok';
+        await refreshAll();
+      } else {
+        msg.textContent = body.error || '\u91cd\u8bd5\u5931\u8d25';
+        msg.className = 'danger';
+      }
+    }
+
+    async function exportFailures() {
+      const msg = document.getElementById('failureMessage');
+      msg.textContent = '\u6b63\u5728\u5bfc\u51fa\u5931\u8d25\u62a5\u544a...';
+      msg.className = 'muted';
+      const res = await fetch('/api/failures/export', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ output_path: document.getElementById('failureExportPath').value.trim() || 'exports/failure_report.jsonl' })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        msg.textContent = `\u5df2\u5bfc\u51fa ${body.failures} \u6761\uff1a${body.path}`;
+        msg.className = 'ok';
+      } else {
+        msg.textContent = body.error || '\u5bfc\u51fa\u5931\u8d25';
+        msg.className = 'danger';
+      }
+    }
+
     function payloadSubtitle(payload) {
-      const keys = ['session_id', 'conversation_id', '会话ID', '用户ID', '渠道'];
-      return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' · ');
+      const keys = ['session_id', 'conversation_id', '\u4f1a\u8bddID', '\u7528\u6237ID', '\u6e20\u9053'];
+      return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' \u00b7 ');
     }
     function formatValue(value) { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
     function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
     document.getElementById('status').addEventListener('change', loadTasks);
     document.getElementById('order').addEventListener('change', loadTasks);
-    loadTasks();
+    refreshAll();
   </script>
 </body>
 </html>

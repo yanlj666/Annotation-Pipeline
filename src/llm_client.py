@@ -22,7 +22,7 @@ class LLMClient:
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
-            raise RuntimeError(f"llm request failed: {exc}") from exc
+            raise exc
         return _parse_content(body)
 
     def complete_json(self, messages: list[dict[str, str]], output_schema: dict[str, Any]) -> dict[str, Any]:
@@ -34,7 +34,7 @@ class LLMClient:
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
-            raise RuntimeError(f"llm request failed: {exc}") from exc
+            raise exc
         return _parse_content(body)
 
     def _url(self) -> str:
