@@ -1,8 +1,8 @@
 import json
 import os
-import urllib.error
-import urllib.request
 from typing import Any
+
+import httpx
 
 
 class LLMClient:
@@ -11,30 +11,48 @@ class LLMClient:
         self.endpoint = _resolve_env(model.get("endpoint"))
         self.api_key = _resolve_env(model.get("api_key"))
         self.model = model.get("name", "model")
-        self.timeout = int(model.get("timeout", 60))
+        self.timeout = int(model.get("timeout", 120))
+
+    async def complete_json_async(self, messages: list[dict[str, str]], output_schema: dict[str, Any]) -> dict[str, Any]:
+        if self._use_mock():
+            return self._mock_annotation(output_schema)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(self._url(), headers=self._headers(), json=self._payload(messages))
+                resp.raise_for_status()
+                body = resp.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"llm request failed: {exc}") from exc
+        return _parse_content(body)
 
     def complete_json(self, messages: list[dict[str, str]], output_schema: dict[str, Any]) -> dict[str, Any]:
         if self._use_mock():
             return self._mock_annotation(output_schema)
-        url = self.endpoint.rstrip("/") + "/v1/chat/completions"
-        payload = {
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.post(self._url(), headers=self._headers(), json=self._payload(messages))
+                resp.raise_for_status()
+                body = resp.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"llm request failed: {exc}") from exc
+        return _parse_content(body)
+
+    def _url(self) -> str:
+        return self.endpoint.rstrip("/") + "/v1/chat/completions"
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        return {
             "model": self.model,
             "messages": messages,
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, method="POST")
-        req.add_header("Content-Type", "application/json")
-        if self.api_key:
-            req.add_header("Authorization", f"Bearer {self.api_key}")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"llm request failed: {exc}") from exc
-        content = body["choices"][0]["message"]["content"]
-        return json.loads(content)
 
     def _use_mock(self) -> bool:
         return (
@@ -62,6 +80,11 @@ class LLMClient:
             else:
                 result[key] = "mock"
         return result
+
+
+def _parse_content(body: dict[str, Any]) -> dict[str, Any]:
+    content = body["choices"][0]["message"]["content"]
+    return json.loads(content)
 
 
 def _resolve_env(value: Any) -> str:

@@ -2,12 +2,15 @@ model:
   endpoint: ${OPENCLAW_ENDPOINT}
   api_key: ${OPENCLAW_API_KEY}
   name: "openclaw-model"
+  timeout: 120
 engine:
   concurrency: 5
   interval_ms: 200
   rate_limit_per_min: 120
+  burst: 5
   max_retries: 3
   sample_size: null
+  progress: true
 task: "intent_v1"
 database: "data/pipeline.db"
 export:

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,31 +30,58 @@ class Store:
                     annotation_json TEXT,
                     error TEXT,
                     review_reason TEXT,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                 )
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
 
     def upsert_task(self, task_id: str, turns: list[dict[str, str]], payload: dict[str, Any]) -> bool:
+        now = _utc_now_ms()
         with self.connect() as conn:
             cur = conn.execute(
                 """
-                INSERT OR IGNORE INTO tasks(task_id, turns_json, payload_json, status)
-                VALUES (?, ?, ?, 'pending')
+                INSERT OR IGNORE INTO tasks(task_id, turns_json, payload_json, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'pending', ?, ?)
                 """,
-                (task_id, json.dumps(turns, ensure_ascii=False), json.dumps(payload, ensure_ascii=False)),
+                (
+                    task_id,
+                    json.dumps(turns, ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                    now,
+                ),
             )
             return cur.rowcount == 1
 
-    def list_tasks(self, status: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    def list_tasks(
+        self,
+        status: str | list[str] | tuple[str, ...] | None = None,
+        limit: int | None = None,
+        q: str | None = None,
+        sort: str = "created_at",
+        order: str = "asc",
+    ) -> list[dict[str, Any]]:
         sql = "SELECT * FROM tasks"
         params: list[Any] = []
+        filters: list[str] = []
         if status:
-            sql += " WHERE status = ?"
-            params.append(status)
-        sql += " ORDER BY created_at ASC"
+            statuses = [status] if isinstance(status, str) else list(status)
+            statuses = [s for s in statuses if s]
+            if statuses:
+                filters.append("status IN (" + ", ".join("?" for _ in statuses) + ")")
+                params.extend(statuses)
+        if q:
+            like = f"%{q}%"
+            filters.append("(task_id LIKE ? OR payload_json LIKE ? OR error LIKE ? OR review_reason LIKE ?)")
+            params.extend([like, like, like, like])
+        if filters:
+            sql += " WHERE " + " AND ".join(filters)
+        if sort not in {"created_at", "updated_at", "task_id", "status"}:
+            sort = "created_at"
+        direction = "DESC" if order.lower() == "desc" else "ASC"
+        sql += f" ORDER BY {sort} {direction}"
         if limit:
             sql += " LIMIT ?"
             params.append(limit)
@@ -86,8 +114,8 @@ class Store:
     def _update(self, task_id: str, status: str, **fields: Any) -> None:
         if status not in STATUSES:
             raise ValueError(f"invalid status: {status}")
-        assignments = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
-        params: list[Any] = [status]
+        assignments = ["status = ?", "updated_at = ?"]
+        params: list[Any] = [status, _utc_now_ms()]
         for key, value in fields.items():
             assignments.append(f"{key} = ?")
             params.append(value)
@@ -103,3 +131,7 @@ class Store:
         raw_annotation = item.pop("annotation_json")
         item["annotation"] = json.loads(raw_annotation) if raw_annotation else None
         return item
+
+
+def _utc_now_ms() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")

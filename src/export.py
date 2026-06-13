@@ -28,6 +28,8 @@ def export_reviewed(
     config: dict[str, Any],
     output_dir: str,
     snippet_chars: int = 800,
+    mark_exported: bool = False,
+    statuses: list[str] | None = None,
 ) -> dict[str, Any]:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -36,15 +38,17 @@ def export_reviewed(
     cases_path = out / "cases.jsonl"
     count = 0
     with cases_path.open("w", encoding="utf-8") as fh:
-        for task in store.list_tasks("reviewed"):
+        for task in store.list_tasks(statuses or ["reviewed"]):
             masked_turns = mask_value(task["turns"], mask_fields)
             item = {
                 "task_id": task["task_id"],
                 "turns": _snippets(masked_turns, snippet_chars),
                 "annotation": mask_value(task["annotation"], mask_fields),
+                "review_reason": mask_value(task.get("review_reason", ""), mask_fields),
             }
             fh.write(json.dumps(item, ensure_ascii=False) + "\n")
-            store.mark_exported(task["task_id"])
+            if mark_exported:
+                store.mark_exported(task["task_id"])
             count += 1
     prompt_dir = out / "prompt_pack"
     prompt_dir.mkdir(exist_ok=True)

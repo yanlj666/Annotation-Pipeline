@@ -5,78 +5,145 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Annotation Review</title>
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; color: #172026; background: #f6f7f9; }
-    main { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
-    aside { border-right: 1px solid #d8dde3; background: #fff; overflow: auto; }
-    button { cursor: pointer; border: 1px solid #c9d1dc; background: #fff; border-radius: 6px; padding: 8px 10px; }
-    .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; }
+    :root { color-scheme: light; --border:#d8dde3; --muted:#667085; --blue:#155eef; --bg:#f3f6fb; --card:#fff; }
+    body { margin: 0; font-family: Inter, Arial, sans-serif; color: #172026; background: var(--bg); }
+    main { display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
+    aside { border-right: 1px solid var(--border); background: #fff; overflow: auto; }
+    section { padding: 24px; overflow: auto; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; border: 1px solid #c9d1dc; background: #fff; border-radius: 8px; padding: 8px 10px; }
+    input, select, textarea { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #fff; box-sizing: border-box; }
+    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: #fbfcfe; }
+    .filter-row, .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .filter-row > * { flex: 1; min-width: 0; }
+    .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; display: block; }
     .task:hover, .task.active { background: #eef4ff; }
-    section { padding: 24px; }
-    .turn, pre, textarea { background: #fff; border: 1px solid #d8dde3; border-radius: 6px; padding: 12px; }
-    .turn { margin: 10px 0; white-space: pre-wrap; }
+    .task-title { font-weight: 700; word-break: break-all; }
+    .task-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+    .badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #eef2ff; color: #3538cd; }
+    .badge.reviewed { background: #ecfdf3; color: #027a48; }
+    .badge.failed { background: #fef3f2; color: #b42318; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 14px 0; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+    .turn { border-radius: 12px; padding: 12px; margin: 10px 0; white-space: pre-wrap; border: 1px solid var(--border); }
+    .turn.user { background: #eff8ff; }
+    .turn.assistant { background: #f8fafc; }
     .role { font-weight: 700; color: #334155; margin-bottom: 6px; }
-    textarea { box-sizing: border-box; width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .toolbar { display: flex; gap: 8px; align-items: center; margin: 16px 0; }
-    .primary { background: #155eef; color: white; border-color: #155eef; }
-    .muted { color: #667085; }
-    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { max-height: 36vh; border-right: 0; border-bottom: 1px solid #d8dde3; } }
+    .primary { background: var(--blue); color: white; border-color: var(--blue); }
+    .danger { color: #b42318; }
+    .ok { color: #027a48; }
+    .annotation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .field-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fbfcfe; }
+    .field-key { font-weight: 700; margin-bottom: 6px; }
+    pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px; overflow: auto; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--border); } }
   </style>
 </head>
 <body>
   <main>
     <aside>
-      <div class="toolbar" style="padding:12px"><button onclick="loadTasks()">刷新</button><span id="count" class="muted"></span></div>
+      <div class="filters">
+        <div class="filter-row">
+          <select id="status"><option value="labeled,reviewed">待审+已审</option><option value="labeled">待审核</option><option value="reviewed">已审核</option><option value="failed">失败</option><option value="all">全部</option></select>
+          <select id="order"><option value="desc">最新优先</option><option value="asc">最早优先</option></select>
+        </div>
+        <div class="filter-row"><input id="query" placeholder="搜索 task_id / payload / reason"><button onclick="loadTasks()">搜索</button></div>
+        <div class="toolbar"><button onclick="loadTasks()">刷新</button><span id="count" class="muted"></span></div>
+      </div>
       <div id="tasks"></div>
     </aside>
     <section>
       <h2 id="title">选择待审任务</h2>
-      <div id="conversation"></div>
-      <h3>Payload</h3>
-      <pre id="payload">{}</pre>
-      <h3>Annotation</h3>
-      <textarea id="annotation"></textarea>
-      <h3>Review Reason</h3>
-      <textarea id="reason" style="min-height:70px"></textarea>
-      <div class="toolbar"><button class="primary" onclick="submitReview()">提交审核</button><span id="message" class="muted"></span></div>
+      <div id="summary" class="muted"></div>
+      <div class="card"><h3>Conversation</h3><div id="conversation"></div></div>
+      <div class="card"><h3>Payload</h3><pre id="payload">{}</pre></div>
+      <div class="card"><h3>Annotation Preview</h3><div id="annotationPreview" class="annotation-grid"></div></div>
+      <div class="card"><h3>Annotation JSON</h3><textarea id="annotation"></textarea></div>
+      <div class="card"><h3>Review Reason</h3><textarea id="reason" style="min-height:70px"></textarea></div>
+      <div class="toolbar"><button class="primary" onclick="submitReview()">提交/更新审核</button><span id="message" class="muted"></span></div>
     </section>
   </main>
   <script>
     let currentId = null;
+
     async function loadTasks() {
-      const res = await fetch('/api/tasks?status=labeled&limit=200');
+      const params = new URLSearchParams({
+        status: document.getElementById('status').value,
+        order: document.getElementById('order').value,
+        sort: 'updated_at',
+        limit: '200'
+      });
+      const q = document.getElementById('query').value.trim();
+      if (q) params.set('q', q);
+      const res = await fetch(`/api/tasks?${params.toString()}`);
       const tasks = await res.json();
       document.getElementById('count').textContent = `${tasks.length} 条`;
-      document.getElementById('tasks').innerHTML = tasks.map(t => `<button class="task" onclick="loadTask('${escapeAttr(t.task_id)}')">${escapeHtml(t.task_id)}<br><span class="muted">${escapeHtml(t.updated_at)}</span></button>`).join('');
+      document.getElementById('tasks').innerHTML = tasks.map(renderTaskButton).join('');
+      document.querySelectorAll('.task').forEach(btn => btn.addEventListener('click', () => loadTask(btn.dataset.id)));
     }
+
+    function renderTaskButton(t) {
+      const subtitle = payloadSubtitle(t.payload || {});
+      return `<button class="task${t.task_id === currentId ? ' active' : ''}" data-id="${escapeAttr(t.task_id)}">
+        <div class="task-title">${escapeHtml(t.task_id)}</div>
+        ${subtitle ? `<div class="muted">${escapeHtml(subtitle)}</div>` : ''}
+        <div class="task-meta"><span class="badge ${escapeAttr(t.status)}">${escapeHtml(t.status)}</span><span class="muted">${escapeHtml(t.updated_at)}</span></div>
+      </button>`;
+    }
+
     async function loadTask(id) {
       currentId = id;
       const task = await (await fetch(`/api/tasks/${encodeURIComponent(id)}`)).json();
       document.getElementById('title').textContent = id;
-      document.getElementById('conversation').innerHTML = task.turns.map(t => `<div class="turn"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
-      document.getElementById('payload').textContent = JSON.stringify(task.payload, null, 2);
+      document.getElementById('summary').textContent = `${task.status || ''} · updated ${task.updated_at || ''}`;
+      document.getElementById('conversation').innerHTML = (task.turns || []).map(t => `<div class="turn ${escapeAttr(t.role)}"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
+      document.getElementById('payload').textContent = JSON.stringify(task.payload || {}, null, 2);
       document.getElementById('annotation').value = JSON.stringify(task.annotation || {}, null, 2);
-      document.getElementById('reason').value = '';
+      document.getElementById('reason').value = task.review_reason || '';
+      renderAnnotationPreview(task.annotation || {});
       document.getElementById('message').textContent = '';
+      await loadTasks();
     }
+
+    function renderAnnotationPreview(annotation) {
+      document.getElementById('annotationPreview').innerHTML = Object.entries(annotation).map(([key, value]) => `
+        <div class="field-card"><div class="field-key">${escapeHtml(key)}</div><div>${escapeHtml(formatValue(value))}</div></div>
+      `).join('') || '<span class="muted">暂无标注结果</span>';
+    }
+
     async function submitReview() {
       if (!currentId) return;
       let annotation;
+      const message = document.getElementById('message');
       try { annotation = JSON.parse(document.getElementById('annotation').value); }
-      catch (e) { document.getElementById('message').textContent = 'Annotation JSON 无效'; return; }
+      catch (e) { message.textContent = 'Annotation JSON 无效'; message.className = 'danger'; return; }
       const res = await fetch(`/api/tasks/${encodeURIComponent(currentId)}/review`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({annotation, reason: document.getElementById('reason').value})
       });
-      document.getElementById('message').textContent = res.ok ? '已提交' : '提交失败';
-      if (res.ok) loadTasks();
+      if (res.ok) {
+        message.textContent = '已提交，可继续编辑后再次提交';
+        message.className = 'ok';
+        renderAnnotationPreview(annotation);
+        await loadTasks();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        message.textContent = body.error || '提交失败';
+        message.className = 'danger';
+      }
     }
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+    function payloadSubtitle(payload) {
+      const keys = ['session_id', 'conversation_id', '会话ID', '用户ID', '渠道'];
+      return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' · ');
     }
-    function escapeAttr(s) {
-      return String(s).replace(/[\\']/g, ch => `\\${ch}`);
-    }
+    function formatValue(value) { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
+    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+    function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
+    document.getElementById('status').addEventListener('change', loadTasks);
+    document.getElementById('order').addEventListener('change', loadTasks);
     loadTasks();
   </script>
 </body>
