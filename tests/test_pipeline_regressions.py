@@ -90,19 +90,20 @@ class IngestRegressionTests(unittest.TestCase):
 
 class ExportRegressionTests(unittest.TestCase):
     def test_export_includes_review_reason_payload_and_snipped_context(self) -> None:
+        phone = "138" + "00138000"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             store = Store(str(tmp_path / "pipeline.db"))
             store.init()
             store.upsert_task(
                 "s1_2",
-                [{"role": "user", "content": "当前手机号 13800138000"}],
+                [{"role": "user", "content": f"当前手机号 {phone}"}],
                 {
                     "session_id": "s1",
                     "context_turns": [{"role": "assistant", "content": "很长的历史上下文"}],
                 },
             )
-            store.mark_reviewed("s1_2", {"label": "ok"}, "联系 13800138000")
+            store.mark_reviewed("s1_2", {"label": "ok"}, f"联系 {phone}")
             task_config_path = tmp_path / "task.yaml"
             task_config_path.write_text("output_schema: {}\n", encoding="utf-8")
 

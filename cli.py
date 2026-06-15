@@ -20,7 +20,7 @@ ROOT = Path(__file__).parent
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AI XiaoWei annotation pipeline")
+    parser = argparse.ArgumentParser(description="Annotation pipeline")
     parser.add_argument("--config", default="config/config.yaml")
     sub = parser.add_subparsers(dest="command", required=True)
 

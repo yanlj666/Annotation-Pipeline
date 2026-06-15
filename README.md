@@ -1,4 +1,4 @@
-# AI XiaoWei Annotation Pipeline
+# Annotation Pipeline
 
 A local LLM conversation annotation workspace:
 

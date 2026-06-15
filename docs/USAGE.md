@@ -22,7 +22,7 @@ python -m venv .venv
 Edit `config/config.yaml` or provide environment variables:
 
 ```bash
-export OPENCLAW_ENDPOINT="http://your-openclaw-endpoint"
+export OPENCLAW_ENDPOINT="https://openclaw-endpoint.example.com"
 export OPENCLAW_API_KEY="..."
 ```
 
