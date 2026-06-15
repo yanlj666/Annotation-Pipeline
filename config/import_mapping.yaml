@@ -1,5 +1,6 @@
 import_mapping:
   source_format: csv
+  turn_mode: single
   fields:
     conversation_id: "会话ID"
     turns: "对话内容"

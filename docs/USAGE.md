@@ -86,8 +86,13 @@ The import contract is:
 - `conversation_id`: idempotency key source
 - `turns`: conversation text or JSON turns
 - `passthrough`: optional business fields copied into `payload`
+- `turn_mode`: optional, defaults to `single`; set to `conversation` to keep earlier turns as folded context
 
 Business fields should not be hard-coded in Python code.
+
+In default `single` mode, the task stores only the current user/assistant round in `turns`.
+When `turn_mode: conversation` is set, earlier messages are stored as `payload.context_turns`
+so labeling can still see context while review and export keep the current round separate.
 
 ## 5. Label
 
@@ -95,6 +100,14 @@ Label pending tasks:
 
 ```bash
 python cli.py label
+```
+
+On Linux/OpenClaw VM sessions that may time out, start long-running commands in a detached
+session and write logs to a file:
+
+```bash
+setsid env OPENCLAW_ENDPOINT="..." OPENCLAW_API_KEY="..." python3 cli.py label --task intent_v1 < /dev/null > /tmp/label.log 2>&1 &
+setsid python3 cli.py serve --host 0.0.0.0 --port 8000 < /dev/null > /tmp/review.log 2>&1 &
 ```
 
 Retry failed tasks:

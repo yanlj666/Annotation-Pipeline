@@ -40,9 +40,16 @@ def export_reviewed(
     with cases_path.open("w", encoding="utf-8") as fh:
         for task in store.list_tasks(statuses or ["reviewed"]):
             masked_turns = mask_value(task["turns"], mask_fields)
+            masked_payload = mask_value(task["payload"], mask_fields)
+            context_turns = []
+            if isinstance(masked_payload, dict):
+                context_turns = masked_payload.pop("context_turns", []) or []
             item = {
                 "task_id": task["task_id"],
                 "turns": _snippets(masked_turns, snippet_chars),
+                "current_turn": _snippets(masked_turns, snippet_chars),
+                "context_turns": _snippets(context_turns, snippet_chars) if isinstance(context_turns, list) else [],
+                "payload": masked_payload,
                 "annotation": mask_value(task["annotation"], mask_fields),
                 "review_reason": mask_value(task.get("review_reason", ""), mask_fields),
             }

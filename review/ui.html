@@ -51,6 +51,8 @@
     .turn { border-radius: 8px; padding: 12px; margin: 10px 0; white-space: pre-wrap; border: 1px solid var(--line); }
     .turn.user { background: #eff8ff; }
     .turn.assistant { background: #f8fafc; }
+    .context-box { margin-top: 12px; }
+    .context-box summary { cursor: pointer; color: var(--muted); font-weight: 700; }
     .role { font-weight: 700; color: #334155; margin-bottom: 6px; }
     .primary { background: var(--blue); color: white; border-color: var(--blue); }
     .danger { color: var(--red); }
@@ -147,6 +149,7 @@
       <h2 id="title">&#36873;&#25321;&#24453;&#23457;&#26680;&#20219;&#21153;</h2>
       <div id="summary" class="muted"></div>
       <div class="card"><h3>&#23545;&#35805;&#20869;&#23481;</h3><div id="conversation"></div></div>
+      <div id="contextCard" class="card" style="display:none"><h3>&#21382;&#21490;&#19978;&#19979;&#25991;</h3><div id="contextTurns"></div></div>
       <div class="card"><h3>&#19994;&#21153;&#23383;&#27573;</h3><pre id="payload">{}</pre></div>
       <div class="card"><h3>&#26631;&#27880;&#39044;&#35272;</h3><div id="annotationPreview" class="annotation-grid"></div></div>
       <div class="card"><h3>&#26631;&#27880; JSON</h3><textarea id="annotation"></textarea></div>
@@ -219,10 +222,17 @@
     async function loadTask(id) {
       currentId = id;
       const task = await (await fetch(`/api/tasks/${encodeURIComponent(id)}`)).json();
+      const payload = task.payload || {};
+      const sessionId = payload.session_id || deriveSessionId(task.task_id || '');
       document.getElementById('title').textContent = id;
-      document.getElementById('summary').textContent = `${task.status || ''} \u00b7 updated ${task.updated_at || ''}`;
-      document.getElementById('conversation').innerHTML = (task.turns || []).map(t => `<div class="turn ${escapeAttr(t.role)}"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
-      document.getElementById('payload').textContent = JSON.stringify(task.payload || {}, null, 2);
+      document.getElementById('summary').textContent = `${task.status || ''} \u00b7 session ${sessionId || '-'} \u00b7 updated ${task.updated_at || ''}`;
+      document.getElementById('conversation').innerHTML = renderTurns(task.turns || []);
+      const contextTurns = Array.isArray(payload.context_turns) ? payload.context_turns : [];
+      document.getElementById('contextCard').style.display = contextTurns.length ? '' : 'none';
+      document.getElementById('contextTurns').innerHTML = contextTurns.length
+        ? `<details class="context-box"><summary>\u5c55\u5f00 ${contextTurns.length} \u6761\u5386\u53f2\u6d88\u606f</summary>${renderTurns(contextTurns)}</details>`
+        : '';
+      document.getElementById('payload').textContent = JSON.stringify(displayPayload(payload), null, 2);
       document.getElementById('annotation').value = JSON.stringify(task.annotation || {}, null, 2);
       document.getElementById('reason').value = task.review_reason || '';
       renderAnnotationPreview(task.annotation || {});
@@ -323,6 +333,17 @@
     function payloadSubtitle(payload) {
       const keys = ['session_id', 'conversation_id', '\u4f1a\u8bddID', '\u7528\u6237ID', '\u6e20\u9053'];
       return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' \u00b7 ');
+    }
+    function displayPayload(payload) {
+      const copy = {...payload};
+      delete copy.context_turns;
+      return copy;
+    }
+    function deriveSessionId(taskId) {
+      return String(taskId).replace(/_\d+$/, '');
+    }
+    function renderTurns(turns) {
+      return turns.map(t => `<div class="turn ${escapeAttr(t.role)}"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
     }
     function formatValue(value) { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }

@@ -18,7 +18,7 @@ class LLMClient:
             return self._mock_annotation(output_schema)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self._url(), headers=self._headers(), json=self._payload(messages))
+                resp = await client.post(self._url(), headers=self._headers(), content=self._payload_body(messages))
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
@@ -30,7 +30,7 @@ class LLMClient:
             return self._mock_annotation(output_schema)
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(self._url(), headers=self._headers(), json=self._payload(messages))
+                resp = client.post(self._url(), headers=self._headers(), content=self._payload_body(messages))
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
@@ -53,6 +53,9 @@ class LLMClient:
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
+
+    def _payload_body(self, messages: list[dict[str, str]]) -> bytes:
+        return json.dumps(self._payload(messages), ensure_ascii=False).encode("utf-8")
 
     def _use_mock(self) -> bool:
         return (

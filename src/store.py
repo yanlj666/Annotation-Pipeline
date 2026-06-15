@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,40 +20,42 @@ class Store:
         return conn
 
     def init(self) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS tasks (
-                    task_id TEXT PRIMARY KEY,
-                    turns_json TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    annotation_json TEXT,
-                    error TEXT,
-                    review_reason TEXT,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        with closing(self.connect()) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        task_id TEXT PRIMARY KEY,
+                        turns_json TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        annotation_json TEXT,
+                        error TEXT,
+                        review_reason TEXT,
+                        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
 
     def upsert_task(self, task_id: str, turns: list[dict[str, str]], payload: dict[str, Any]) -> bool:
         now = _utc_now_ms()
-        with self.connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT OR IGNORE INTO tasks(task_id, turns_json, payload_json, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'pending', ?, ?)
-                """,
-                (
-                    task_id,
-                    json.dumps(turns, ensure_ascii=False),
-                    json.dumps(payload, ensure_ascii=False),
-                    now,
-                    now,
-                ),
-            )
+        with closing(self.connect()) as conn:
+            with conn:
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO tasks(task_id, turns_json, payload_json, status, created_at, updated_at)
+                    VALUES (?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (
+                        task_id,
+                        json.dumps(turns, ensure_ascii=False),
+                        json.dumps(payload, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
             return cur.rowcount == 1
 
     def list_tasks(
@@ -85,17 +88,17 @@ class Store:
         if limit:
             sql += " LIMIT ?"
             params.append(limit)
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             return [self._decode(row) for row in conn.execute(sql, params)]
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         return self._decode(row) if row else None
 
     def stats(self) -> dict[str, Any]:
         counts = {status: 0 for status in sorted(STATUSES)}
-        with self.connect() as conn:
+        with closing(self.connect()) as conn:
             for row in conn.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"):
                 counts[row["status"]] = row["count"]
             row = conn.execute(
@@ -136,8 +139,9 @@ class Store:
             assignments.append(f"{key} = ?")
             params.append(value)
         params.append(task_id)
-        with self.connect() as conn:
-            conn.execute(f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?", params)
+        with closing(self.connect()) as conn:
+            with conn:
+                conn.execute(f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?", params)
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:
