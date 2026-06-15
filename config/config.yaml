@@ -3,6 +3,9 @@ model:
   api_key: ${OPENCLAW_API_KEY}
   name: "openclaw-model"
   timeout: 120
+  temperature: 0
+  top_p: 1
+  seed: null
 engine:
   concurrency: 5
   interval_ms: 200

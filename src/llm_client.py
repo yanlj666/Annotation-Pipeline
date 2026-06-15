@@ -7,30 +7,41 @@ import httpx
 
 class LLMClient:
     def __init__(self, config: dict[str, Any]):
+        self.config = config
         model = config.get("model", {})
         self.endpoint = _resolve_env(model.get("endpoint"))
         self.api_key = _resolve_env(model.get("api_key"))
         self.model = model.get("name", "model")
         self.timeout = int(model.get("timeout", 120))
 
-    async def complete_json_async(self, messages: list[dict[str, str]], output_schema: dict[str, Any]) -> dict[str, Any]:
+    async def complete_json_async(
+        self,
+        messages: list[dict[str, str]],
+        output_schema: dict[str, Any],
+        sampling: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if self._use_mock():
             return self._mock_annotation(output_schema)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self._url(), headers=self._headers(), content=self._payload_body(messages))
+                resp = await client.post(self._url(), headers=self._headers(), content=self._payload_body(messages, sampling))
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
             raise exc
         return _parse_content(body)
 
-    def complete_json(self, messages: list[dict[str, str]], output_schema: dict[str, Any]) -> dict[str, Any]:
+    def complete_json(
+        self,
+        messages: list[dict[str, str]],
+        output_schema: dict[str, Any],
+        sampling: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if self._use_mock():
             return self._mock_annotation(output_schema)
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(self._url(), headers=self._headers(), content=self._payload_body(messages))
+                resp = client.post(self._url(), headers=self._headers(), content=self._payload_body(messages, sampling))
                 resp.raise_for_status()
                 body = resp.json()
         except httpx.HTTPError as exc:
@@ -46,16 +57,22 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
-        return {
+    def _payload(self, messages: list[dict[str, str]], sampling: dict[str, Any] | None = None) -> dict[str, Any]:
+        sampling = {"temperature": 0, "top_p": 1, "seed": None, **(sampling or {})}
+        payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0,
+            "temperature": sampling["temperature"],
+            "top_p": sampling["top_p"],
             "response_format": {"type": "json_object"},
         }
+        seed = sampling.get("seed")
+        if isinstance(seed, int) and not isinstance(seed, bool):
+            payload["seed"] = seed
+        return payload
 
-    def _payload_body(self, messages: list[dict[str, str]]) -> bytes:
-        return json.dumps(self._payload(messages), ensure_ascii=False).encode("utf-8")
+    def _payload_body(self, messages: list[dict[str, str]], sampling: dict[str, Any] | None = None) -> bytes:
+        return json.dumps(self._payload(messages, sampling), ensure_ascii=False).encode("utf-8")
 
     def _use_mock(self) -> bool:
         return (

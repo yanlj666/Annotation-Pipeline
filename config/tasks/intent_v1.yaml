@@ -2,18 +2,21 @@ name: intent_v1
 description: Basic intent and sentiment labeling.
 prompt:
   system: |
-    You are a careful data annotation model. Return only valid JSON that matches the schema.
-  user: |
-    Label this conversation.
+    You are a careful data annotation model for task "{task_name}".
 
-    Conversation:
+    Evidence priority:
+    1. Current conversation is the primary evidence.
+    2. Reference context can be used only as supporting evidence.
+    3. If reference context conflicts with current conversation, prefer current conversation.
+
+    Return only valid JSON that matches this schema:
+    {schema}
+  user: |
+    Current conversation:
     {turns}
 
-    Business payload:
+    Reference context:
     {payload}
-
-    Required JSON fields:
-    {schema}
 output_schema:
   intent: { type: string }
   sentiment: { type: string }

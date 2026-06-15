@@ -114,6 +114,7 @@ async def run_labeling(
         max_retries=max_retries,
         model=client.model,
         endpoint=client.endpoint,
+        **resolve_sampling_config(config, task_config),
     )
 
     async def one(task: dict[str, Any]) -> None:
@@ -220,11 +221,22 @@ async def _label_once(client: LLMClient, task_config: dict[str, Any], task: dict
     turns = json.dumps(task["turns"], ensure_ascii=False, indent=2)
     payload = json.dumps(task["payload"], ensure_ascii=False, indent=2)
     schema = json.dumps(task_config["output_schema"], ensure_ascii=False, indent=2)
+    values = {
+        "turns": turns,
+        "payload": payload,
+        "schema": schema,
+        "task_name": str(task_config.get("name", "")),
+        "task_description": str(task_config.get("description", "")),
+    }
     messages = [
-        {"role": "system", "content": prompt["system"]},
-        {"role": "user", "content": render_prompt_template(prompt["user"], turns=turns, payload=payload, schema=schema)},
+        {"role": "system", "content": render_prompt_template(prompt["system"], **values)},
+        {"role": "user", "content": render_prompt_template(prompt["user"], **values)},
     ]
-    return await client.complete_json_async(messages, task_config["output_schema"])
+    return await client.complete_json_async(
+        messages,
+        task_config["output_schema"],
+        resolve_sampling_config(client.config, task_config),
+    )
 
 
 def render_prompt_template(template: str, **values: str) -> str:
@@ -233,6 +245,23 @@ def render_prompt_template(template: str, **values: str) -> str:
     for key, value in values.items():
         rendered = rendered.replace("{" + key + "}", value)
     return rendered
+
+
+def resolve_sampling_config(config: dict[str, Any], task_config: dict[str, Any]) -> dict[str, Any]:
+    model_cfg = config.get("model", {})
+    return {
+        "temperature": _first_configured(task_config, model_cfg, "temperature", 0),
+        "top_p": _first_configured(task_config, model_cfg, "top_p", 1),
+        "seed": _first_configured(task_config, model_cfg, "seed", None),
+    }
+
+
+def _first_configured(task_config: dict[str, Any], model_cfg: dict[str, Any], key: str, default: Any) -> Any:
+    if task_config.get(key) is not None:
+        return task_config[key]
+    if model_cfg.get(key) is not None:
+        return model_cfg[key]
+    return default
 
 
 def validate_output(annotation: dict[str, Any], schema: dict[str, Any]) -> None:

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from src.export import export_reviewed
+from src.engine import render_prompt_template, resolve_sampling_config
 from src.ingest import ingest_file, normalize_row, parse_turns
 from src.llm_client import LLMClient
 from src.store import Store
@@ -133,6 +134,63 @@ class LLMClientRegressionTests(unittest.TestCase):
         self.assertIsInstance(body, bytes)
         self.assertIn("中文…", body.decode("utf-8"))
         self.assertEqual(json.loads(body.decode("utf-8"))["messages"][0]["content"], "中文…")
+
+    def test_payload_includes_default_sampling_parameters_without_null_seed(self) -> None:
+        client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
+
+        payload = client._payload([{"role": "user", "content": "hello"}])
+
+        self.assertEqual(payload["temperature"], 0)
+        self.assertEqual(payload["top_p"], 1)
+        self.assertNotIn("seed", payload)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+    def test_payload_uses_sampling_overrides_and_integer_seed(self) -> None:
+        client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
+
+        payload = client._payload(
+            [{"role": "user", "content": "hello"}],
+            {"temperature": 0.2, "top_p": 0.9, "seed": 42},
+        )
+
+        self.assertEqual(payload["temperature"], 0.2)
+        self.assertEqual(payload["top_p"], 0.9)
+        self.assertEqual(payload["seed"], 42)
+
+    def test_payload_omits_non_integer_seed(self) -> None:
+        client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
+
+        payload = client._payload([{"role": "user", "content": "hello"}], {"seed": "42"})
+
+        self.assertNotIn("seed", payload)
+
+
+class PromptRenderingRegressionTests(unittest.TestCase):
+    def test_render_prompt_template_replaces_known_placeholders_and_keeps_unknowns(self) -> None:
+        rendered = render_prompt_template(
+            "Task {task_name}: {schema}; sample {turns}; keep {unknown}",
+            task_name="intent_v1",
+            schema='{"intent": {"type": "string"}}',
+            turns="[]",
+        )
+
+        self.assertIn("Task intent_v1", rendered)
+        self.assertIn('{"intent": {"type": "string"}}', rendered)
+        self.assertIn("sample []", rendered)
+        self.assertIn("{unknown}", rendered)
+
+    def test_task_sampling_overrides_model_sampling(self) -> None:
+        sampling = resolve_sampling_config(
+            {"model": {"temperature": 0.4, "top_p": 0.8, "seed": 7}},
+            {"temperature": 0, "top_p": 1, "seed": 42},
+        )
+
+        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": 42})
+
+    def test_model_sampling_falls_back_to_defaults_when_unset(self) -> None:
+        sampling = resolve_sampling_config({"model": {"temperature": None, "seed": None}}, {})
+
+        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": None})
 
 
 if __name__ == "__main__":
