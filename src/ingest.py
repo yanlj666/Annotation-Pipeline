@@ -18,6 +18,7 @@ def ingest_file(input_path: str, mapping: dict[str, Any], store: Store) -> dict[
     source_format = cfg.get("source_format") or Path(input_path).suffix.lstrip(".")
     rows = _read_rows(input_path, source_format)
     created = skipped = invalid = 0
+    skipped_by_status: dict[str, int] = {}
     for row in rows:
         try:
             task = normalize_row(row, cfg)
@@ -28,7 +29,15 @@ def ingest_file(input_path: str, mapping: dict[str, Any], store: Store) -> dict[
             created += 1
         else:
             skipped += 1
-    return {"created": created, "skipped_existing": skipped, "invalid": invalid}
+            statuses = store.status_counts_for([task["task_id"]])
+            status = next((key for key, value in statuses.items() if value), "unknown")
+            skipped_by_status[status] = skipped_by_status.get(status, 0) + 1
+    return {
+        "created": created,
+        "skipped_existing": skipped,
+        "invalid": invalid,
+        "skipped_by_status": skipped_by_status,
+    }
 
 
 def normalize_row(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:

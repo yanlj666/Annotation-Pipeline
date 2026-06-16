@@ -26,6 +26,14 @@ export OPENCLAW_ENDPOINT="https://openclaw-endpoint.example.com"
 export OPENCLAW_API_KEY="..."
 ```
 
+You can also point the CLI at another config file with either style:
+
+```bash
+AP_CONFIG=config/config.yaml python cli.py label
+python cli.py --config config/config.yaml label
+python cli.py label --config config/config.yaml
+```
+
 The model endpoint must be OpenAI-compatible and accept:
 
 ```text
@@ -81,6 +89,20 @@ python cli.py init-db
 python cli.py ingest path/to/input.csv
 ```
 
+`init-db` only creates or migrates schema. To start from an empty database for a new test run:
+
+```bash
+python cli.py reset-db
+# or
+python cli.py init-db --force
+```
+
+Check current progress at any time:
+
+```bash
+python cli.py status
+```
+
 The import contract is:
 
 - `conversation_id`: idempotency key source
@@ -99,8 +121,12 @@ so labeling can still see context while review and export keep the current round
 Label pending tasks:
 
 ```bash
-python cli.py label
+python cli.py label --strict
 ```
+
+`--strict` refuses to run in mock mode when model credentials are missing. Without `--strict`,
+the label command prints a prominent mock-mode warning and returns deterministic mock annotations
+for local testing.
 
 On Linux/OpenClaw VM sessions that may time out, start long-running commands in a detached
 session and write logs to a file:
@@ -130,6 +156,8 @@ Use the workspace page to:
 
 - view total task status
 - inspect labeled conversations
+- filter by annotation field and one or more exact values
+- browse large task sets with a fixed filter area and paginated task list
 - edit annotation JSON
 - write review reasons
 - export reviewed cases
@@ -141,9 +169,25 @@ CLI export remains available for automation:
 
 ```bash
 python cli.py export --out exports
+python cli.py export --output exports
 ```
 
-## 7. Common Failures
+## 7. Evaluation Batches
+
+For staged evaluation runs, use `eval-batch` to create sampled CSV batches, track progress,
+archive exports, and merge completed batch outputs:
+
+```bash
+python cli.py eval-batch create --name batch_001 --source data/full.csv --sample 100
+python cli.py ingest data/batches/batch_001.csv
+python cli.py label --strict
+python cli.py export --output exports/batch_001
+python cli.py eval-batch archive --name batch_001 --export-path exports/batch_001
+python cli.py eval-batch status
+python cli.py eval-batch merge --output exports/merged_all.jsonl
+```
+
+## 8. Common Failures
 
 - `timeout`: OpenClaw response is too slow. Reduce concurrency or increase model timeout.
 - `rate_limited`: OpenClaw returned 429 or rate-limit text. Lower `rate_limit_per_min` and `burst`.
@@ -154,7 +198,7 @@ python cli.py export --out exports
 - `data_error`: input rows are empty or malformed.
 - `unknown`: keep the raw log and ask a model or engineer to inspect it.
 
-## 8. What to Give a Model for Troubleshooting
+## 9. What to Give a Model for Troubleshooting
 
 Provide:
 

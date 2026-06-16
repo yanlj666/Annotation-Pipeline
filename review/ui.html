@@ -27,8 +27,8 @@
     h1 { font-size: 22px; }
     h2 { font-size: 18px; margin-bottom: 12px; }
     h3 { font-size: 15px; margin-bottom: 10px; }
-    main { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 73px); }
-    aside { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; }
+    main { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 73px); }
+    aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
     section { padding: 20px 24px 32px; overflow: auto; }
     .muted { color: var(--muted); font-size: 13px; }
     .dashboard { display: grid; grid-template-columns: 1.1fr .9fr; gap: 14px; margin-bottom: 18px; }
@@ -38,6 +38,9 @@
     .stat-value { font-size: 24px; font-weight: 700; }
     .stat-label { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: #fbfcfe; }
+    #tasks { flex: 1; min-height: 0; overflow-y: auto; }
+    .pagination { border-top: 1px solid var(--line); padding: 10px 12px; background: #fbfcfe; display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    .pagination button { min-width: 36px; padding: 6px 8px; }
     .row, .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .row > input, .row > select { flex: 1; min-width: 0; }
     .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; display: block; }
@@ -92,6 +95,14 @@
           </select>
         </div>
         <div class="row">
+          <select id="annotationField" aria-label="annotation field">
+            <option value="">&#26631;&#27880;&#23383;&#27573;</option>
+          </select>
+          <select id="annotationValue" aria-label="annotation value" multiple size="3">
+            <option value="">&#23383;&#27573;&#20540;</option>
+          </select>
+        </div>
+        <div class="row">
           <input id="query" placeholder="&#25628;&#32034; task_id / payload / &#25209;&#27880;">
           <button onclick="loadTasks()">&#25628;&#32034;</button>
         </div>
@@ -101,6 +112,7 @@
         </div>
       </div>
       <div id="tasks"></div>
+      <div id="pagination" class="pagination"></div>
     </aside>
     <section>
       <div class="dashboard">
@@ -159,6 +171,10 @@
   </main>
   <script>
     let currentId = null;
+    let allTasks = [];
+    let filteredTasks = [];
+    let currentPage = 1;
+    const pageSize = 50;
     const labels = {
       pending: '\u5f85\u6807\u6ce8',
       labeled: '\u5f85\u5ba1\u6838',
@@ -169,7 +185,7 @@
     };
 
     async function refreshAll() {
-      await Promise.all([loadStats(), loadFailures(), loadTasks()]);
+      await Promise.all([loadStats(), loadFailures(), loadSchema(), loadTasks()]);
     }
 
     async function loadStats() {
@@ -199,15 +215,101 @@
         status: document.getElementById('status').value,
         order: document.getElementById('order').value,
         sort: 'updated_at',
-        limit: '200'
+        limit: '10000'
       });
       const q = document.getElementById('query').value.trim();
       if (q) params.set('q', q);
       const res = await fetch(`/api/tasks?${params.toString()}`);
-      const tasks = await res.json();
-      document.getElementById('count').textContent = `${tasks.length} \u6761`;
+      allTasks = await res.json();
+      updateAnnotationValues();
+      applyTaskFilters();
+    }
+
+    async function loadSchema() {
+      const schema = await (await fetch('/api/schema')).json();
+      const field = document.getElementById('annotationField');
+      const selected = field.value;
+      field.innerHTML = '<option value="">\u6807\u6ce8\u5b57\u6bb5</option>' + Object.keys(schema || {}).map(key => (
+        `<option value="${escapeAttr(key)}">${escapeHtml(key)}</option>`
+      )).join('');
+      field.value = selected;
+    }
+
+    function updateAnnotationValues() {
+      const field = document.getElementById('annotationField').value;
+      const valueSelect = document.getElementById('annotationValue');
+      const selected = selectedAnnotationValues();
+      if (!field) {
+        valueSelect.innerHTML = '<option value="">\u5b57\u6bb5\u503c</option>';
+        return;
+      }
+      const values = new Set();
+      allTasks.forEach(task => {
+        const annotation = task.annotation || {};
+        if (!(field in annotation)) return;
+        const value = annotation[field];
+        if (Array.isArray(value)) {
+          value.forEach(item => values.add(formatValue(item)));
+        } else {
+          values.add(formatValue(value));
+        }
+      });
+      valueSelect.innerHTML = '<option value="">\u5168\u90e8\u503c</option>' + [...values].sort().map(value => (
+        `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`
+      )).join('');
+      [...valueSelect.options].forEach(option => {
+        option.selected = selected.includes(option.value);
+      });
+    }
+
+    function applyTaskFilters() {
+      const field = document.getElementById('annotationField').value;
+      const values = selectedAnnotationValues();
+      filteredTasks = allTasks.filter(task => matchesAnnotationFilter(task, field, values));
+      currentPage = Math.min(currentPage, Math.max(1, Math.ceil(filteredTasks.length / pageSize)));
+      renderTaskPage();
+    }
+
+    function selectedAnnotationValues() {
+      return [...document.getElementById('annotationValue').selectedOptions]
+        .map(option => option.value)
+        .filter(Boolean);
+    }
+
+    function matchesAnnotationFilter(task, field, values) {
+      if (!field) return true;
+      const annotation = task.annotation || {};
+      if (!(field in annotation)) return false;
+      if (!values.length) return true;
+      const actual = annotation[field];
+      if (Array.isArray(actual)) return actual.map(formatValue).some(value => values.includes(value));
+      return values.includes(formatValue(actual));
+    }
+
+    function renderTaskPage() {
+      const totalPages = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
+      currentPage = Math.min(Math.max(1, currentPage), totalPages);
+      const start = (currentPage - 1) * pageSize;
+      const tasks = filteredTasks.slice(start, start + pageSize);
+      document.getElementById('count').textContent = `${filteredTasks.length} \u6761`;
       document.getElementById('tasks').innerHTML = tasks.map(renderTaskButton).join('');
       document.querySelectorAll('.task').forEach(btn => btn.addEventListener('click', () => loadTask(btn.dataset.id)));
+      renderPagination(totalPages);
+    }
+
+    function renderPagination(totalPages) {
+      document.getElementById('pagination').innerHTML = `
+        <button onclick="goPage(1)" ${currentPage === 1 ? 'disabled' : ''}>\u00ab</button>
+        <button onclick="goPage(currentPage - 1)" ${currentPage === 1 ? 'disabled' : ''}>\u2039</button>
+        <span class="muted">${currentPage}/${totalPages}</span>
+        <button onclick="goPage(currentPage + 1)" ${currentPage === totalPages ? 'disabled' : ''}>\u203a</button>
+        <button onclick="goPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>\u00bb</button>
+      `;
+    }
+
+    function goPage(page) {
+      currentPage = page;
+      renderTaskPage();
     }
 
     function renderTaskButton(t) {
@@ -350,6 +452,15 @@
     function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
     document.getElementById('status').addEventListener('change', loadTasks);
     document.getElementById('order').addEventListener('change', loadTasks);
+    document.getElementById('annotationField').addEventListener('change', () => {
+      currentPage = 1;
+      updateAnnotationValues();
+      applyTaskFilters();
+    });
+    document.getElementById('annotationValue').addEventListener('change', () => {
+      currentPage = 1;
+      applyTaskFilters();
+    });
     refreshAll();
   </script>
 </body>

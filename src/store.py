@@ -22,6 +22,7 @@ class Store:
     def init(self) -> None:
         with closing(self.connect()) as conn:
             with conn:
+                self._migrate_legacy_cases(conn)
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS tasks (
@@ -38,6 +39,13 @@ class Store:
                     """
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+
+    def reset(self) -> None:
+        with closing(self.connect()) as conn:
+            with conn:
+                conn.execute("DROP TABLE IF EXISTS tasks")
+                conn.execute("DROP TABLE IF EXISTS cases")
+        self.init()
 
     def upsert_task(self, task_id: str, turns: list[dict[str, str]], payload: dict[str, Any]) -> bool:
         now = _utc_now_ms()
@@ -108,6 +116,7 @@ class Store:
         return {
             "counts": counts,
             "total": total,
+            "remaining": counts.get("pending", 0) + counts.get("failed", 0),
             "last_updated_at": row["last_updated_at"] if row else None,
             "database": str(self.db_path),
         }
@@ -130,6 +139,20 @@ class Store:
     def mark_exported(self, task_id: str) -> None:
         self._update(task_id, "exported")
 
+    def status_counts_for(self, task_ids: list[str]) -> dict[str, int]:
+        counts = {status: 0 for status in sorted(STATUSES)}
+        counts["missing"] = 0
+        if not task_ids:
+            return counts
+        with closing(self.connect()) as conn:
+            for task_id in task_ids:
+                row = conn.execute("SELECT status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                if row:
+                    counts[row["status"]] = counts.get(row["status"], 0) + 1
+                else:
+                    counts["missing"] += 1
+        return counts
+
     def _update(self, task_id: str, status: str, **fields: Any) -> None:
         if status not in STATUSES:
             raise ValueError(f"invalid status: {status}")
@@ -143,6 +166,67 @@ class Store:
             with conn:
                 conn.execute(f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?", params)
 
+    def _migrate_legacy_cases(self, conn: sqlite3.Connection) -> None:
+        tables = {
+            row["name"]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        if "tasks" in tables or "cases" not in tables:
+            return
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(cases)")]
+        if "task_id" not in columns:
+            raise RuntimeError(
+                "legacy table 'cases' was found but cannot be migrated automatically: missing task_id column"
+            )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                turns_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                annotation_json TEXT,
+                error TEXT,
+                review_reason TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            )
+            """
+        )
+        now = _utc_now_ms()
+        rows = conn.execute("SELECT * FROM cases").fetchall()
+        for row in rows:
+            item = dict(row)
+            task_id = str(item.get("task_id", "")).strip()
+            if not task_id:
+                continue
+            turns = _json_text(item, ["turns_json", "turns"], [])
+            payload = _json_text(item, ["payload_json", "payload"], {})
+            annotation = _json_text(item, ["annotation_json", "annotation"], None)
+            status = str(item.get("status") or ("labeled" if annotation else "pending"))
+            if status not in STATUSES:
+                status = "pending"
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO tasks(
+                    task_id, turns_json, payload_json, status, annotation_json,
+                    error, review_reason, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    turns,
+                    payload,
+                    status,
+                    annotation,
+                    item.get("error"),
+                    item.get("review_reason"),
+                    str(item.get("created_at") or now),
+                    str(item.get("updated_at") or now),
+                ),
+            )
+
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)
@@ -155,3 +239,20 @@ class Store:
 
 def _utc_now_ms() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _json_text(item: dict[str, Any], keys: list[str], default: Any) -> str | None:
+    for key in keys:
+        value = item.get(key)
+        if value is None or value == "":
+            continue
+        if isinstance(value, str):
+            try:
+                json.loads(value)
+                return value
+            except json.JSONDecodeError:
+                return json.dumps(value, ensure_ascii=False)
+        return json.dumps(value, ensure_ascii=False)
+    if default is None:
+        return None
+    return json.dumps(default, ensure_ascii=False)

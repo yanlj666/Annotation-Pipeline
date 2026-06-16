@@ -28,12 +28,14 @@ Open `http://127.0.0.1:8000` for the workspace.
 
 ```bash
 python cli.py init-db
+python cli.py status
 python cli.py ingest path/to/input.csv
-python cli.py label --task intent_v1
+python cli.py label --task intent_v1 --strict
 python cli.py label --status failed
 python cli.py serve --host 127.0.0.1 --port 8000
 python cli.py export --out exports
 python cli.py gold-eval path/to/gold.jsonl
+python cli.py eval-batch status
 ```
 
 ## Documentation

@@ -82,6 +82,17 @@ class LLMClient:
             or self.endpoint.startswith("mock://")
         )
 
+    def mock_reason(self) -> str | None:
+        if os.environ.get("MOCK_LLM") == "1":
+            return "MOCK_LLM=1"
+        if not self.endpoint:
+            return "model endpoint is not configured"
+        if self.endpoint.startswith("${"):
+            return f"environment variable was not resolved: {self.endpoint}"
+        if self.endpoint.startswith("mock://"):
+            return "model endpoint uses mock://"
+        return None
+
     @staticmethod
     def _mock_annotation(output_schema: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = {}

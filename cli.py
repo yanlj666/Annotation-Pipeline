@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import os
 import threading
 import webbrowser
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 import yaml
 
 from review.server import run_server
+from src.batch import archive_batch, batch_status, create_batch, merge_exports
 from src.engine import run_labeling
 from src.export import export_reviewed
 from src.quality import evaluate_gold
@@ -20,38 +22,45 @@ ROOT = Path(__file__).parent
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Annotation pipeline")
-    parser.add_argument("--config", default="config/config.yaml")
+    config_parent = argparse.ArgumentParser(add_help=False)
+    config_parent.add_argument("--config", default=argparse.SUPPRESS, help="config file path; can also use AP_CONFIG")
+    parser = argparse.ArgumentParser(description="Annotation pipeline", parents=[config_parent])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init-db")
+    init_db = sub.add_parser("init-db", parents=[config_parent])
+    init_db.add_argument("--force", action="store_true", help="drop and recreate the tasks table")
 
-    ingest = sub.add_parser("ingest")
+    sub.add_parser("reset-db", parents=[config_parent], help="drop and recreate all pipeline tables")
+
+    sub.add_parser("status", parents=[config_parent], help="show database status counts")
+
+    ingest = sub.add_parser("ingest", parents=[config_parent])
     ingest.add_argument("input")
     ingest.add_argument("--mapping", default="config/import_mapping.yaml")
 
-    label = sub.add_parser("label")
+    label = sub.add_parser("label", parents=[config_parent])
     label.add_argument("--task")
+    label.add_argument("--strict", action="store_true", help="fail instead of using mock annotations")
     label.add_argument(
         "--status",
         default="pending",
         help="comma-separated task statuses to label, e.g. pending, failed, pending,failed",
     )
 
-    review = sub.add_parser("review")
+    review = sub.add_parser("review", parents=[config_parent])
     review.add_argument("--host", default="127.0.0.1")
     review.add_argument("--port", type=int, default=8000)
     review.add_argument("--task")
     review.add_argument("--open", action="store_true", help="open the review page in the default browser")
 
-    serve = sub.add_parser("serve", help="start the full web workspace")
+    serve = sub.add_parser("serve", parents=[config_parent], help="start the full web workspace")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--task")
     serve.add_argument("--open", action="store_true", help="open the workspace in the default browser")
 
-    export = sub.add_parser("export")
-    export.add_argument("--out", default="exports")
+    export = sub.add_parser("export", parents=[config_parent])
+    export.add_argument("--out", "--output", dest="out", default="exports")
     export.add_argument("--task")
     export.add_argument(
         "--mark-exported",
@@ -64,24 +73,57 @@ def main() -> None:
         help="comma-separated statuses to export, e.g. reviewed,exported",
     )
 
-    gold = sub.add_parser("gold-eval")
+    gold = sub.add_parser("gold-eval", parents=[config_parent])
     gold.add_argument("gold_jsonl")
     gold.add_argument("--task")
 
+    batch = sub.add_parser("eval-batch", parents=[config_parent], help="manage evaluation batches")
+    batch_sub = batch.add_subparsers(dest="batch_command", required=True)
+    batch_create = batch_sub.add_parser("create", parents=[config_parent])
+    batch_create.add_argument("--name", required=True)
+    batch_create.add_argument("--source", required=True)
+    batch_create.add_argument("--sample", type=int)
+    batch_create.add_argument("--seed", type=int, default=1)
+    batch_create.add_argument("--id-field", default="会话ID")
+    batch_create.add_argument("--dir", default="data/batches")
+    batch_archive = batch_sub.add_parser("archive", parents=[config_parent])
+    batch_archive.add_argument("--name", required=True)
+    batch_archive.add_argument("--export-path", required=True)
+    batch_archive.add_argument("--dir", default="data/batches")
+    batch_status_cmd = batch_sub.add_parser("status", parents=[config_parent])
+    batch_status_cmd.add_argument("--dir", default="data/batches")
+    batch_merge = batch_sub.add_parser("merge", parents=[config_parent])
+    batch_merge.add_argument("--out", "--output", dest="out", required=True)
+    batch_merge.add_argument("--dir", default="data/batches")
+
     args = parser.parse_args()
-    config = load_yaml(args.config)
+    config_path = getattr(args, "config", None) or os.environ.get("AP_CONFIG") or "config/config.yaml"
+    config = load_yaml(config_path)
     store = Store(config.get("database", "data/pipeline.db"))
 
     if args.command == "init-db":
-        store.init()
+        if args.force:
+            store.reset()
+        else:
+            store.init()
         print(json.dumps({"ok": True, "database": str(store.db_path)}, ensure_ascii=False))
+    elif args.command == "reset-db":
+        store.reset()
+        print(json.dumps({"ok": True, "database": str(store.db_path), "reset": True}, ensure_ascii=False))
+    elif args.command == "status":
+        store.init()
+        print(json.dumps(store.stats(), ensure_ascii=False))
     elif args.command == "ingest":
         print(json.dumps(ingest_file(args.input, load_yaml(args.mapping), store), ensure_ascii=False))
     elif args.command == "label":
         task_name = args.task or config.get("task")
         task_config = load_task(task_name)
         statuses = [s.strip() for s in args.status.split(",") if s.strip()]
-        result = asyncio.run(run_labeling(config, task_config, store, statuses=statuses))
+        try:
+            result = asyncio.run(run_labeling(config, task_config, store, statuses=statuses, strict=args.strict))
+        except RuntimeError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            raise SystemExit(2) from exc
         print(json.dumps(result, ensure_ascii=False))
     elif args.command in {"review", "serve"}:
         task_name = args.task or config.get("task")
@@ -121,6 +163,19 @@ def main() -> None:
         task_name = args.task or config.get("task")
         task_config = load_task(task_name)
         print(json.dumps(evaluate_gold(store, args.gold_jsonl, task_config["output_schema"]), ensure_ascii=False))
+    elif args.command == "eval-batch":
+        if args.batch_command == "create":
+            result = create_batch(args.name, args.source, args.dir, args.sample, args.seed, args.id_field)
+        elif args.batch_command == "archive":
+            result = archive_batch(args.name, args.export_path, args.dir)
+        elif args.batch_command == "status":
+            store.init()
+            result = batch_status(store, args.dir)
+        elif args.batch_command == "merge":
+            result = merge_exports(args.out, args.dir)
+        else:
+            raise ValueError(f"unknown eval-batch command: {args.batch_command}")
+        print(json.dumps(result, ensure_ascii=False))
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:

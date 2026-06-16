@@ -64,6 +64,7 @@ async def run_labeling(
     task_config: dict[str, Any],
     store: Store,
     statuses: list[str] | tuple[str, ...] | str = "pending",
+    strict: bool = False,
 ) -> dict[str, Any]:
     store.init()
     engine_cfg = config.get("engine", {})
@@ -71,6 +72,15 @@ async def run_labeling(
     selected_statuses = _parse_statuses(statuses)
     tasks = store.list_tasks(selected_statuses, sample_size)
     client = LLMClient(config)
+    mock_reason = client.mock_reason()
+    if mock_reason:
+        if strict:
+            raise RuntimeError(f"mock mode refused by --strict: {mock_reason}")
+        print("=" * 60, flush=True)
+        print(f"[MOCK MODE] {mock_reason}", flush=True)
+        print("[MOCK MODE] Returning deterministic mock annotations for testing only.", flush=True)
+        print("[MOCK MODE] Set OPENCLAW_ENDPOINT and OPENCLAW_API_KEY for production labeling.", flush=True)
+        print("=" * 60, flush=True)
     concurrency = max(1, int(engine_cfg.get("concurrency", 1)))
     limiter = RateLimiter(
         engine_cfg.get("interval_ms", 0),
@@ -115,6 +125,8 @@ async def run_labeling(
         model=client.model,
         endpoint=client.endpoint,
         **resolve_sampling_config(config, task_config),
+        mock=bool(mock_reason),
+        mock_reason=mock_reason,
     )
 
     async def one(task: dict[str, Any]) -> None:
@@ -208,6 +220,7 @@ async def run_labeling(
             "log_path": str(run_logger.path),
             "error_types": dict(error_counts),
             "failure_rate": round(failure_rate, 4),
+            "mock": bool(mock_reason),
         }
         await run_logger.write("run_finished", **result)
         log(f"finished counts={counts} error_types={dict(error_counts)} log={run_logger.path}")

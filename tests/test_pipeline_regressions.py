@@ -1,13 +1,17 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
+from src.batch import archive_batch, batch_status, create_batch, merge_exports
+from src.engine import run_labeling
 from src.export import export_reviewed
 from src.engine import render_prompt_template, resolve_sampling_config
 from src.ingest import ingest_file, normalize_row, parse_turns
 from src.llm_client import LLMClient
 from src.store import Store
+import asyncio
 
 
 class IngestRegressionTests(unittest.TestCase):
@@ -85,8 +89,8 @@ class IngestRegressionTests(unittest.TestCase):
             first = ingest_file(str(csv_path), mapping, store)
             second = ingest_file(str(csv_path), mapping, store)
 
-        self.assertEqual(first, {"created": 1, "skipped_existing": 0, "invalid": 0})
-        self.assertEqual(second, {"created": 0, "skipped_existing": 1, "invalid": 0})
+        self.assertEqual(first, {"created": 1, "skipped_existing": 0, "invalid": 0, "skipped_by_status": {}})
+        self.assertEqual(second, {"created": 0, "skipped_existing": 1, "invalid": 0, "skipped_by_status": {"pending": 1}})
 
 
 class ExportRegressionTests(unittest.TestCase):
@@ -191,6 +195,86 @@ class PromptRenderingRegressionTests(unittest.TestCase):
         sampling = resolve_sampling_config({"model": {"temperature": None, "seed": None}}, {})
 
         self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": None})
+
+
+class StoreRegressionTests(unittest.TestCase):
+    def test_reset_db_clears_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "pipeline.db"))
+            store.init()
+            store.upsert_task("t1", [{"role": "user", "content": "hello"}], {})
+
+            store.reset()
+
+            self.assertEqual(store.stats()["total"], 0)
+
+    def test_init_migrates_legacy_cases_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "pipeline.db"
+            conn = sqlite3.connect(db_path)
+            with conn:
+                conn.execute("CREATE TABLE cases(task_id TEXT PRIMARY KEY, turns TEXT, payload TEXT, annotation TEXT, status TEXT)")
+                conn.execute(
+                    "INSERT INTO cases(task_id, turns, payload, annotation, status) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        "legacy-1",
+                        json.dumps([{"role": "user", "content": "hi"}]),
+                        json.dumps({"session_id": "legacy"}),
+                        json.dumps({"label": "ok"}),
+                        "reviewed",
+                    ),
+                )
+            conn.close()
+
+            store = Store(str(db_path))
+            store.init()
+            task = store.get_task("legacy-1")
+
+            self.assertIsNotNone(task)
+            self.assertEqual(task["status"], "reviewed")
+            self.assertEqual(task["annotation"], {"label": "ok"})
+
+
+class LabelingRegressionTests(unittest.TestCase):
+    def test_strict_mode_refuses_mock_labeling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "pipeline.db"))
+            store.init()
+            store.upsert_task("t1", [{"role": "user", "content": "hello"}], {})
+
+            with self.assertRaisesRegex(RuntimeError, "mock mode refused"):
+                asyncio.run(
+                    run_labeling(
+                        {"model": {"endpoint": "${MISSING_ENDPOINT}"}, "engine": {"log_dir": str(Path(tmp) / "logs")}},
+                        {"output_schema": {"label": {"type": "string"}}, "prompt": {"system": "", "user": "{turns} {payload} {schema}"}},
+                        store,
+                        strict=True,
+                    )
+                )
+
+
+class BatchRegressionTests(unittest.TestCase):
+    def test_batch_create_archive_status_and_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "source.csv"
+            source.write_text("会话ID,对话内容\nb1,hello\nb2,world\n", encoding="utf-8")
+            created = create_batch("batch1", str(source), str(tmp_path / "batches"), sample=1, seed=2)
+            self.assertEqual(created["count"], 1)
+
+            store = Store(str(tmp_path / "pipeline.db"))
+            store.init()
+            store.upsert_task("b1", [{"role": "user", "content": "hello"}], {})
+            status = batch_status(store, str(tmp_path / "batches"))
+            self.assertEqual(status["registered_tasks"], 1)
+
+            export_dir = tmp_path / "export"
+            export_dir.mkdir()
+            (export_dir / "cases.jsonl").write_text(json.dumps({"task_id": "b1"}, ensure_ascii=False) + "\n", encoding="utf-8")
+            archive_batch("batch1", str(export_dir), str(tmp_path / "batches"))
+            merged = merge_exports(str(tmp_path / "merged.jsonl"), str(tmp_path / "batches"))
+
+            self.assertEqual(merged["merged"], 1)
 
 
 if __name__ == "__main__":
