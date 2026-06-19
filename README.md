@@ -1,6 +1,6 @@
 # Annotation Pipeline
 
-A local LLM conversation annotation workspace:
+A local LLM exchange-level annotation workspace:
 
 1. ingest CSV/JSONL into SQLite
 2. label rows with an OpenAI-compatible endpoint such as OpenClaw
@@ -30,6 +30,7 @@ Open `http://127.0.0.1:8000` for the workspace.
 python cli.py init-db
 python cli.py status
 python cli.py ingest path/to/input.csv
+python cli.py preflight --task intent_v1 --sample 1 --strict
 python cli.py label --task intent_v1 --strict
 python cli.py label --status failed
 python cli.py serve --host 127.0.0.1 --port 8000
@@ -40,13 +41,14 @@ python cli.py eval-batch status
 
 ## Documentation
 
-- Usage guide: [docs/USAGE.md](docs/USAGE.md)
-- OpenClaw collaboration guide: [docs/OPENCLAW_COLLABORATION.md](docs/OPENCLAW_COLLABORATION.md)
+- Quick start: [docs/QUICKSTART.md](docs/QUICKSTART.md)
+- Full guide: [docs/GUIDE.md](docs/GUIDE.md)
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Key Contracts
 
 - `task_id`, `turns`, and `status` are stable internal fields.
+- Imported rows are exchanges. `session_id`, `exchange_id`, `exchange_time`, and `turns` are configured in `config/import_mapping.yaml`.
 - Business-specific fields stay in `payload`.
 - OpenClaw endpoint, API key, and model name come from config or environment variables.
 - Exports must pass through masking.

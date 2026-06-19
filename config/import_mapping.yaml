@@ -1,12 +1,12 @@
 import_mapping:
   source_format: csv
-  turn_mode: single
+  task_mode: turn_with_context
   fields:
-    conversation_id: "会话ID"
-    turns: "对话内容"
+    session_id: "session_id"
+    exchange_id: "exchange_id"
+    exchange_time: "exchange_time"
+    turns: "turns"
   passthrough:
     - "用户ID"
     - "渠道"
     - "下单状态"
-    - "session_id"
-    - "conversation_id"

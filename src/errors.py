@@ -49,10 +49,20 @@ def classify_error(error: BaseException | str) -> str:
         or "must be number" in text
         or "must be array" in text
         or "must be object" in text
+        or "must be one of" in text
+        or "enum must be" in text
         or "annotation must be" in text
     ):
         return "schema_error"
-    if "empty conversation" in text or "empty conversation id" in text or "unsupported source format" in text:
+    if (
+        "empty conversation" in text
+        or "empty exchange" in text
+        or "empty session" in text
+        or "missing import_mapping.fields" in text
+        or "unsupported source format" in text
+        or "unsupported task_mode" in text
+        or "turn_mode has been replaced" in text
+    ):
         return "data_error"
     if "connect" in text or "network" in text or "connection" in text or "dns" in text:
         return "network_error"

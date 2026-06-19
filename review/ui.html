@@ -3,236 +3,912 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Annotation Workspace</title>
+  <title>对话标注审核工作台</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f4f7fb;
-      --panel: #ffffff;
-      --line: #d9e0ea;
-      --text: #172026;
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-soft: #f9fafb;
+      --surface-blue: #f4f7ff;
+      --fg: #111827;
       --muted: #667085;
-      --blue: #155eef;
-      --green: #027a48;
-      --red: #b42318;
+      --subtle: #98a2b3;
+      --border: #d9e1ec;
+      --border-strong: #bcc7d6;
+      --accent: #1d5fd7;
+      --accent-soft: #eaf1ff;
+      --success: #027a48;
+      --success-soft: #ecfdf3;
+      --danger: #b42318;
+      --danger-soft: #fef3f2;
+      --warn: #b54708;
+      --warn-soft: #fff7ed;
+      --shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
     }
+
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); }
-    button, input, select, textarea { font: inherit; }
-    button { cursor: pointer; border: 1px solid #c9d1dc; background: #fff; border-radius: 8px; padding: 8px 10px; }
-    input, select, textarea { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
-    textarea { width: 100%; min-height: 170px; font-family: Consolas, "SFMono-Regular", monospace; }
-    header { padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
-    h1, h2, h3 { margin: 0; }
-    h1 { font-size: 22px; }
-    h2 { font-size: 18px; margin-bottom: 12px; }
-    h3 { font-size: 15px; margin-bottom: 10px; }
-    main { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 73px); }
-    aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-    section { padding: 20px 24px 32px; overflow: auto; }
-    .muted { color: var(--muted); font-size: 13px; }
-    .dashboard { display: grid; grid-template-columns: 1.1fr .9fr; gap: 14px; margin-bottom: 18px; }
-    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-    .stats { display: grid; grid-template-columns: repeat(6, minmax(80px, 1fr)); gap: 8px; }
-    .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfe; }
-    .stat-value { font-size: 24px; font-weight: 700; }
-    .stat-label { color: var(--muted); font-size: 12px; margin-top: 2px; }
-    .filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: #fbfcfe; }
-    #tasks { flex: 1; min-height: 0; overflow-y: auto; }
-    .pagination { border-top: 1px solid var(--line); padding: 10px 12px; background: #fbfcfe; display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
-    .pagination button { min-width: 36px; padding: 6px 8px; }
-    .row, .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .row > input, .row > select { flex: 1; min-width: 0; }
-    .task { width: 100%; text-align: left; border-width: 0 0 1px 0; border-radius: 0; padding: 12px; display: block; }
-    .task:hover, .task.active { background: #eef4ff; }
-    .task-title { font-weight: 700; word-break: break-all; }
-    .task-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
-    .badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #eef2ff; color: #3538cd; }
-    .badge.reviewed { background: #ecfdf3; color: var(--green); }
-    .badge.exported { background: #f0f9ff; color: #026aa2; }
-    .badge.failed { background: #fef3f2; color: var(--red); }
-    .turn { border-radius: 8px; padding: 12px; margin: 10px 0; white-space: pre-wrap; border: 1px solid var(--line); }
-    .turn.user { background: #eff8ff; }
-    .turn.assistant { background: #f8fafc; }
-    .context-box { margin-top: 12px; }
-    .context-box summary { cursor: pointer; color: var(--muted); font-weight: 700; }
-    .role { font-weight: 700; color: #334155; margin-bottom: 6px; }
-    .primary { background: var(--blue); color: white; border-color: var(--blue); }
-    .danger { color: var(--red); }
-    .ok { color: var(--green); }
-    .annotation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
-    .field-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfe; }
-    .field-key { font-weight: 700; margin-bottom: 6px; }
-    pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 12px; overflow: auto; }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-      aside { max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--line); }
-      .dashboard { grid-template-columns: 1fr; }
-      .stats { grid-template-columns: repeat(2, 1fr); }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.55 var(--font-body);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
+    button, input, select, textarea { font: inherit; }
+    button {
+      cursor: pointer;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--fg);
+      border-radius: 6px;
+      padding: 8px 11px;
+      min-height: 36px;
+      transition: border-color .15s ease, background .15s ease, color .15s ease, transform .12s ease;
+    }
+    button:hover { border-color: #9aa8bb; background: #fbfcfe; }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .45; cursor: default; transform: none; }
+    button:focus-visible,
+    summary:focus-visible,
+    .field-card:focus-visible,
+    .task:focus-visible {
+      outline: 2px solid rgba(29, 95, 215, .72);
+      outline-offset: 2px;
+    }
+    input, select, textarea {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--fg);
+      padding: 8px 10px;
+      min-height: 36px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(29, 95, 215, .12);
+    }
+    textarea {
+      width: 100%;
+      min-height: 210px;
+      resize: vertical;
+      font: 13px/1.55 var(--font-mono);
+    }
+    h1, h2, h3 { margin: 0; letter-spacing: 0; }
+    h1 { font-size: 20px; line-height: 1.2; font-weight: 650; }
+    h2 { font-size: 16px; line-height: 1.3; font-weight: 650; }
+    h3 { font-size: 13px; line-height: 1.3; font-weight: 650; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, .92);
+      backdrop-filter: blur(12px);
+    }
+    .product-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      font: 700 13px/1 var(--font-mono);
+      letter-spacing: .08em;
+    }
+    .title-copy { min-width: 0; }
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 1px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(74px, 1fr));
+      gap: 6px;
+      min-width: min(700px, 56vw);
+    }
+    .status-strip .inline-alert { grid-column: 1 / -1; }
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      padding: 6px 8px;
+      min-width: 0;
+    }
+    .stat-value {
+      font: 650 17px/1.1 var(--font-mono);
+      letter-spacing: 0;
+    }
+    .stat-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 328px minmax(0, 1fr);
+      min-height: 0;
+      height: calc(100vh - 59px);
+    }
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .filters {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-soft);
+    }
+    .row, .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row > input, .row > select { flex: 1; min-width: 0; }
+    .filter-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .list-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    #tasks { flex: 1; min-height: 0; overflow-y: auto; }
+    .task {
+      width: 100%;
+      display: block;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      padding: 12px 14px;
+      background: var(--surface);
+    }
+    .task:hover { background: #f8fbff; }
+    .task.active {
+      background: var(--accent-soft);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .task-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .task-title {
+      font: 650 12px/1.35 var(--font-mono);
+      word-break: break-all;
+      color: #233044;
+    }
+    .task-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .task-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .task-signals {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .signal {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      padding: 1px 7px;
+      font: 11px/1.6 var(--font-mono);
+    }
+    .pagination {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px;
+      background: var(--surface-soft);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .pagination button { min-width: 34px; padding: 5px 8px; }
+
+    .main {
+      min-width: 0;
+      overflow: auto;
+      padding: 14px;
+    }
+    .review-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      gap: 16px;
+      max-width: 1540px;
+      margin: 0 auto;
+      align-items: start;
+    }
+    .review-primary, .review-aside {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .review-aside {
+      position: sticky;
+      top: 73px;
+      max-height: calc(100vh - 87px);
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .review-aside {
+      grid-template-rows: minmax(96px, auto) auto auto auto;
+      align-content: start;
+    }
+    .review-aside > .panel:first-child .panel-body {
+      max-height: 268px;
+      overflow: auto;
+    }
+    .task-header {
+      display: grid;
+      gap: 8px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .task-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .task-heading h2 {
+      font-size: 18px;
+      font-family: var(--font-mono);
+      letter-spacing: 0;
+      word-break: break-all;
+    }
+    .summary-line {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-soft);
+    }
+    .panel-head .muted {
+      white-space: nowrap;
+    }
+    .panel-body { padding: 12px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .primary:hover { background: #174fb4; border-color: #174fb4; }
+    .ghost { background: transparent; }
+    .danger { color: var(--danger); }
+    .ok { color: var(--success); }
+    .warn { color: var(--warn); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 8px;
+      min-height: 22px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .badge.labeled { background: var(--accent-soft); color: var(--accent); border-color: #c9dafc; }
+    .badge.reviewed { background: var(--success-soft); color: var(--success); border-color: #abefc6; }
+    .badge.exported { background: #eef4ff; color: #175cd3; border-color: #c7d7fe; }
+    .badge.failed { background: var(--danger-soft); color: var(--danger); border-color: #fecdca; }
+    .badge.pending { background: #f2f4f7; color: #475467; border-color: #d0d5dd; }
+
+    .conversation {
+      display: grid;
+      gap: 10px;
+    }
+    .turn {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--surface);
+      white-space: pre-wrap;
+    }
+    .turn.user { border-left: 3px solid var(--accent); background: #fbfdff; }
+    .turn.assistant { border-left: 3px solid #7a8aa0; background: #fcfcfd; }
+    .role {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-weight: 650;
+    }
+    .turn-content {
+      max-width: 78ch;
+      color: #1f2937;
+      word-break: break-word;
+    }
+    .empty-state {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 28px;
+    }
+    .empty-state.compact {
+      min-height: 96px;
+      padding: 18px;
+    }
+    .empty-state strong {
+      display: block;
+      color: var(--fg);
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .context-box summary {
+      cursor: pointer;
+      color: var(--fg);
+      font-weight: 650;
+    }
+    pre {
+      margin: 0;
+      border-radius: 7px;
+      background: #101828;
+      color: #e4e7ec;
+      padding: 12px;
+      overflow: auto;
+      max-height: 360px;
+      font: 12px/1.55 var(--font-mono);
+    }
+
+    .annotation-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+    }
+    .field-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 9px 10px;
+      background: var(--surface);
+      display: grid;
+      grid-template-columns: minmax(116px, .42fr) minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+    .field-card:hover, .field-card.selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .field-card.selected {
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .field-key {
+      font: 650 12px/1.3 var(--font-mono);
+      color: #24304a;
+      word-break: break-all;
+    }
+    .field-value {
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-word;
+    }
+    .editor-status {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 8px;
+      min-height: 22px;
+    }
+    .json-panel {
+      overflow: hidden;
+      border-color: #e4eaf2;
+      background: #fbfcfe;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .json-panel:not([open]) {
+      min-height: 0;
+      display: block;
+    }
+    .json-panel:not([open]) .json-summary {
+      border-bottom: 0;
+    }
+    .json-panel[open] .panel-body {
+      min-height: 0;
+      overflow: visible;
+      display: grid;
+      grid-template-rows: auto;
+      gap: 8px;
+    }
+    .json-panel[open] #annotation {
+      min-height: 360px;
+      max-height: min(70vh, 760px);
+      resize: vertical;
+    }
+    .json-panel[open] {
+      min-height: 440px;
+    }
+    .json-summary {
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+      background: #fbfcfe;
+    }
+    .json-summary::-webkit-details-marker {
+      display: none;
+    }
+    .json-summary h3 {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .json-summary h3::before {
+      content: '›';
+      width: 16px;
+      height: 16px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 4px;
+      color: var(--muted);
+      transition: transform .15s ease, background .15s ease;
+    }
+    .json-summary:hover h3::before {
+      background: var(--surface-soft);
+      color: var(--fg);
+    }
+    .json-panel[open] .json-summary h3::before {
+      transform: rotate(90deg);
+    }
+    .json-summary-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .json-toggle-hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .json-panel:not([open]) .json-toggle-hint {
+      color: var(--subtle);
+    }
+    .status-pill {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .status-pill.ok { color: var(--success); background: var(--success-soft); border-color: #abefc6; }
+    .status-pill.danger { color: var(--danger); background: var(--danger-soft); border-color: #fecdca; }
+    .status-pill.warn { color: var(--warn); background: var(--warn-soft); border-color: #fedf89; }
+    .review-actions {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      border-color: #c7d7fe;
+      box-shadow: 0 -8px 18px rgba(16, 24, 40, .06);
+    }
+    .submit-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .submit-row button { width: 100%; }
+    .message-line {
+      min-height: 20px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .inline-alert {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 9px 10px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .inline-alert.danger {
+      border-color: #fecdca;
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+    .ops-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .ops-details {
+      max-width: 1500px;
+      margin: 16px auto 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .ops-details > summary {
+      cursor: pointer;
+      padding: 12px 14px;
+      font-weight: 650;
+      background: var(--surface-soft);
+      border-bottom: 1px solid var(--border);
+    }
+    .ops-details[open] > summary { border-bottom: 1px solid var(--border); }
+    .ops-body { padding: 14px; }
+
   </style>
 </head>
 <body>
-  <header>
-    <h1>Annotation Workspace</h1>
-    <div class="muted">&#24635;&#25511;&#29366;&#24577;&#12289;&#20154;&#24037;&#22797;&#26680;&#12289;&#25209;&#27880;&#23548;&#20986;&#21644;&#22833;&#36133;&#25490;&#26597;</div>
-  </header>
-  <main>
-    <aside>
-      <div class="filters">
-        <div class="row">
-          <select id="status">
-            <option value="labeled,reviewed">&#24453;&#23457; + &#24050;&#23457;</option>
-            <option value="labeled">&#24453;&#23457;&#26680;</option>
-            <option value="reviewed">&#24050;&#23457;&#26680;</option>
-            <option value="exported">&#24050;&#23548;&#20986;</option>
-            <option value="failed">&#22833;&#36133;</option>
-            <option value="all">&#20840;&#37096;</option>
-          </select>
-          <select id="order">
-            <option value="desc">&#26368;&#26032;&#20248;&#20808;</option>
-            <option value="asc">&#26368;&#26089;&#20248;&#20808;</option>
-          </select>
-        </div>
-        <div class="row">
-          <select id="annotationField" aria-label="annotation field">
-            <option value="">&#26631;&#27880;&#23383;&#27573;</option>
-          </select>
-          <select id="annotationValue" aria-label="annotation value" multiple size="3">
-            <option value="">&#23383;&#27573;&#20540;</option>
-          </select>
-        </div>
-        <div class="row">
-          <input id="query" placeholder="&#25628;&#32034; task_id / payload / &#25209;&#27880;">
-          <button onclick="loadTasks()">&#25628;&#32034;</button>
-        </div>
-        <div class="toolbar">
-          <button onclick="refreshAll()">&#21047;&#26032;</button>
-          <span id="count" class="muted"></span>
+  <div class="app">
+    <header class="topbar">
+      <div class="product-title">
+        <div class="mark">QA</div>
+        <div class="title-copy">
+          <h1>对话标注审核工作台</h1>
+          <div class="subtitle">人工复核、标注修订、批注导出与失败排查</div>
         </div>
       </div>
-      <div id="tasks"></div>
-      <div id="pagination" class="pagination"></div>
-    </aside>
-    <section>
-      <div class="dashboard">
-        <div class="card">
-          <h2>&#36816;&#34892;&#29366;&#24577;</h2>
-          <div id="stats" class="stats"></div>
-          <div id="statsMeta" class="muted" style="margin-top:10px"></div>
-        </div>
-        <div class="card">
-          <h2>&#23548;&#20986;&#25209;&#27880;&#25968;&#25454;</h2>
+      <div id="stats" class="status-strip" aria-label="运行状态"></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar" aria-label="任务列表">
+        <div class="filters">
+          <div class="filter-label">任务筛选</div>
           <div class="row">
-            <select id="exportStatus">
-              <option value="reviewed">&#24050;&#23457;&#26680;</option>
-              <option value="reviewed,exported">&#24050;&#23457;&#26680; + &#24050;&#23548;&#20986;</option>
-              <option value="all">&#20840;&#37096;</option>
+            <select id="status">
+              <option value="labeled,reviewed">待审 + 已审</option>
+              <option value="labeled">待审核</option>
+              <option value="reviewed">已审核</option>
+              <option value="exported">已导出</option>
+              <option value="failed">失败</option>
+              <option value="all">全部</option>
             </select>
-            <input id="exportDir" value="exports/ui_export" aria-label="export directory">
+            <select id="order">
+              <option value="desc">最新优先</option>
+              <option value="asc">最早优先</option>
+            </select>
           </div>
-          <div class="toolbar" style="margin-top:10px">
-            <label><input id="markExported" type="checkbox"> &#23548;&#20986;&#21518;&#26631;&#35760;&#20026; exported</label>
-            <button class="primary" onclick="exportCases()">&#23548;&#20986;</button>
-          </div>
-          <div id="exportMessage" class="muted" style="margin-top:8px"></div>
-        </div>
-      </div>
-
-      <div class="dashboard">
-        <div class="card">
-          <h2>&#22833;&#36133;&#25688;&#35201;</h2>
-          <div id="failureSummary" class="muted"></div>
-          <pre id="failureRecent">[]</pre>
-        </div>
-        <div class="card">
-          <h2>&#22833;&#36133;&#25490;&#26597;&#25805;&#20316;</h2>
           <div class="row">
-            <input id="failureExportPath" value="exports/failure_report.jsonl" aria-label="failure report path">
+            <select id="annotationField" aria-label="标注字段">
+              <option value="">标注字段</option>
+            </select>
+            <select id="annotationValue" aria-label="字段值" multiple size="3">
+              <option value="">字段值</option>
+            </select>
           </div>
-          <div class="toolbar" style="margin-top:10px">
-            <button onclick="retryFailed()">&#37325;&#35797;&#22833;&#36133;&#20219;&#21153;</button>
-            <button onclick="exportFailures()">&#23548;&#20986;&#22833;&#36133;&#25253;&#21578;</button>
+          <div class="row">
+            <input id="query" placeholder="搜索 task_id / payload / 批注">
+            <button onclick="loadTasks()">搜索</button>
           </div>
-          <div id="failureMessage" class="muted" style="margin-top:8px"></div>
+          <div class="toolbar">
+            <button class="ghost" onclick="refreshAll()">刷新</button>
+            <span id="statsMeta" class="muted"></span>
+          </div>
         </div>
-      </div>
+        <div class="list-head">
+          <span>审核队列</span>
+          <span id="count" class="mono"></span>
+        </div>
+        <div id="tasks"></div>
+        <div id="pagination" class="pagination"></div>
+      </aside>
 
-      <h2 id="title">&#36873;&#25321;&#24453;&#23457;&#26680;&#20219;&#21153;</h2>
-      <div id="summary" class="muted"></div>
-      <div class="card"><h3>&#23545;&#35805;&#20869;&#23481;</h3><div id="conversation"></div></div>
-      <div id="contextCard" class="card" style="display:none"><h3>&#21382;&#21490;&#19978;&#19979;&#25991;</h3><div id="contextTurns"></div></div>
-      <div class="card"><h3>&#19994;&#21153;&#23383;&#27573;</h3><pre id="payload">{}</pre></div>
-      <div class="card"><h3>&#26631;&#27880;&#39044;&#35272;</h3><div id="annotationPreview" class="annotation-grid"></div></div>
-      <div class="card"><h3>&#26631;&#27880; JSON</h3><textarea id="annotation"></textarea></div>
-      <div class="card"><h3>&#22797;&#26680;&#25209;&#27880;</h3><textarea id="reason" style="min-height:80px"></textarea></div>
-      <div class="toolbar"><button class="primary" onclick="submitReview()">&#25552;&#20132;/&#26356;&#26032;&#23457;&#26680;</button><span id="message" class="muted"></span></div>
-    </section>
-  </main>
+      <section class="main">
+        <div class="review-shell">
+          <div class="review-primary">
+            <div class="task-header">
+              <div class="task-heading">
+                <h2 id="title">选择待审核任务</h2>
+                <span id="titleBadge" class="badge pending">未选择</span>
+              </div>
+              <div id="summary" class="summary-line">从左侧队列选择一条任务后，先阅读对话，再核对标注字段并提交复核结论。</div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>对话内容</h3>
+                <span id="turnCount" class="muted">0 条消息</span>
+              </div>
+              <div class="panel-body">
+                <div id="conversation" class="conversation">
+                  <div class="empty-state">
+                    <div>
+                      <strong>暂无选中任务</strong>
+                      <span>当前 exchange 会在这里完整展示，便于逐字段复核。</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="contextCard" class="panel" style="display:none">
+              <div class="panel-head">
+                <h3>历史上下文</h3>
+              </div>
+              <div class="panel-body" id="contextTurns"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>业务字段</h3>
+              </div>
+              <div class="panel-body"><pre id="payload">{}</pre></div>
+            </div>
+          </div>
+
+          <aside class="review-aside" aria-label="审核编辑区">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>标注预览</h3>
+                <span class="muted">点击字段可插入批注</span>
+              </div>
+              <div class="panel-body">
+                <div id="annotationPreview" class="annotation-grid">
+                  <span class="muted">暂无标注结果</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>复核批注</h3>
+                <span class="muted">逐字段记录</span>
+              </div>
+              <div class="panel-body">
+                <textarea id="reason" style="min-height:150px" placeholder="例如：字段 X 与当前 exchange 的用户意图不一致，建议改为…"></textarea>
+              </div>
+            </div>
+
+            <div class="panel review-actions">
+              <div class="panel-body submit-row">
+                <button id="submitReviewBtn" class="primary" onclick="submitReview()" disabled>提交 / 更新审核</button>
+                <span id="message" class="muted message-line" role="status" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <details class="panel json-panel" id="annotationJsonPanel">
+              <summary class="panel-head json-summary">
+                <h3>标注 JSON</h3>
+                <span class="json-summary-meta">
+                  <span id="jsonState" class="status-pill">未选择任务</span>
+                  <span id="dirtyState" class="status-pill">未修改</span>
+                  <span id="jsonToggleHint" class="json-toggle-hint">展开</span>
+                </span>
+              </summary>
+              <div class="panel-body">
+                <textarea id="annotation" spellcheck="false"></textarea>
+              </div>
+            </details>
+          </aside>
+        </div>
+
+        <details class="ops-details">
+          <summary>导出与失败排查</summary>
+          <div class="ops-body">
+            <div class="ops-grid">
+              <div class="panel">
+                <div class="panel-head"><h3>导出批注数据</h3></div>
+                <div class="panel-body">
+                  <div class="row">
+                    <select id="exportStatus">
+                      <option value="reviewed">已审核</option>
+                      <option value="reviewed,exported">已审核 + 已导出</option>
+                      <option value="all">全部</option>
+                    </select>
+                    <input id="exportDir" value="exports/ui_export" aria-label="导出目录">
+                  </div>
+                  <div class="toolbar" style="margin-top:10px">
+                    <label><input id="markExported" type="checkbox"> 导出后标记为 exported</label>
+                    <button class="primary" onclick="exportCases()">导出</button>
+                  </div>
+                  <div id="exportMessage" class="muted" style="margin-top:8px"></div>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head"><h3>失败排查操作</h3></div>
+                <div class="panel-body">
+                  <div id="failureSummary" class="muted"></div>
+                  <pre id="failureRecent" style="margin-top:10px; max-height:190px">[]</pre>
+                  <div class="row" style="margin-top:10px">
+                    <input id="failureExportPath" value="exports/failure_report.jsonl" aria-label="失败报告路径">
+                  </div>
+                  <div class="toolbar" style="margin-top:10px">
+                    <button onclick="retryFailed()">重试失败任务</button>
+                    <button onclick="exportFailures()">导出失败报告</button>
+                  </div>
+                  <div id="failureMessage" class="muted" style="margin-top:8px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
   <script>
     let currentId = null;
     let allTasks = [];
     let filteredTasks = [];
     let currentPage = 1;
+    let selectedAnnotationField = null;
+    let originalAnnotationText = '';
     const pageSize = 50;
     const labels = {
-      pending: '\u5f85\u6807\u6ce8',
-      labeled: '\u5f85\u5ba1\u6838',
-      reviewed: '\u5df2\u5ba1\u6838',
-      exported: '\u5df2\u5bfc\u51fa',
-      failed: '\u5931\u8d25',
-      total: '\u603b\u6570'
+      pending: '待标注',
+      labeled: '待审核',
+      reviewed: '已审核',
+      exported: '已导出',
+      failed: '失败',
+      total: '总数'
     };
 
     async function refreshAll() {
-      await Promise.all([loadStats(), loadFailures(), loadSchema(), loadTasks()]);
+      await Promise.allSettled([loadStats(), loadFailures(), loadSchema(), loadTasks()]);
     }
 
     async function loadStats() {
-      const stats = await (await fetch('/api/stats')).json();
-      const counts = stats.counts || {};
-      const items = ['pending', 'labeled', 'reviewed', 'exported', 'failed', 'total'];
-      document.getElementById('stats').innerHTML = items.map(key => `
-        <div class="stat">
-          <div class="stat-value">${escapeHtml(key === 'total' ? stats.total || 0 : counts[key] || 0)}</div>
-          <div class="stat-label">${labels[key]}</div>
-        </div>
-      `).join('');
-      document.getElementById('statsMeta').textContent =
-        `\u6570\u636e\u5e93\uff1a${stats.database || '-'} \u00b7 \u6700\u8fd1\u66f4\u65b0\uff1a${stats.last_updated_at || '-'}`;
+      try {
+        const stats = await fetchJson('/api/stats');
+        const counts = stats.counts || {};
+        const items = ['labeled', 'reviewed', 'failed', 'exported', 'pending', 'total'];
+        document.getElementById('stats').innerHTML = items.map(key => `
+          <div class="stat">
+            <div class="stat-value">${escapeHtml(key === 'total' ? stats.total || 0 : counts[key] || 0)}</div>
+            <div class="stat-label">${labels[key]}</div>
+          </div>
+        `).join('');
+        document.getElementById('statsMeta').textContent =
+          `数据库：${stats.database || '-'} · 最近更新：${stats.last_updated_at || '-'}`;
+      } catch (error) {
+        document.getElementById('stats').innerHTML = '<div class="inline-alert danger">运行状态加载失败，请检查后端服务。</div>';
+        document.getElementById('statsMeta').textContent = '';
+      }
     }
 
     async function loadFailures() {
-      const data = await (await fetch('/api/failures/summary')).json();
-      const counts = Object.entries(data.counts || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || '-';
-      document.getElementById('failureSummary').textContent =
-        `\u5931\u8d25\u603b\u6570\uff1a${data.total || 0} \u00b7 \u5206\u7c7b\uff1a${counts}`;
-      document.getElementById('failureRecent').textContent = JSON.stringify(data.recent || [], null, 2);
+      try {
+        const data = await fetchJson('/api/failures/summary');
+        const counts = Object.entries(data.counts || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || '-';
+        document.getElementById('failureSummary').textContent =
+          `失败总数：${data.total || 0} · 分类：${counts}`;
+        document.getElementById('failureRecent').textContent = JSON.stringify(data.recent || [], null, 2);
+      } catch (error) {
+        document.getElementById('failureSummary').textContent = '失败任务摘要加载失败';
+        document.getElementById('failureRecent').textContent = '[]';
+      }
     }
 
     async function loadTasks() {
-      const params = new URLSearchParams({
-        status: document.getElementById('status').value,
-        order: document.getElementById('order').value,
-        sort: 'updated_at',
-        limit: '10000'
-      });
-      const q = document.getElementById('query').value.trim();
-      if (q) params.set('q', q);
-      const res = await fetch(`/api/tasks?${params.toString()}`);
-      allTasks = await res.json();
-      updateAnnotationValues();
-      applyTaskFilters();
+      const tasksNode = document.getElementById('tasks');
+      tasksNode.innerHTML = '<div class="empty-state compact"><div><strong>正在加载任务</strong><span>请稍候…</span></div></div>';
+      try {
+        const params = new URLSearchParams({
+          status: document.getElementById('status').value,
+          order: document.getElementById('order').value,
+          sort: 'updated_at',
+          limit: '10000'
+        });
+        const q = document.getElementById('query').value.trim();
+        if (q) params.set('q', q);
+        allTasks = await fetchJson(`/api/tasks?${params.toString()}`);
+        updateAnnotationValues();
+        applyTaskFilters();
+      } catch (error) {
+        allTasks = [];
+        filteredTasks = [];
+        document.getElementById('count').textContent = '0 条';
+        document.getElementById('pagination').innerHTML = '';
+        tasksNode.innerHTML = '<div class="empty-state compact"><div><strong>任务加载失败</strong><span>请确认服务已启动，或稍后刷新。</span></div></div>';
+      }
     }
 
     async function loadSchema() {
-      const schema = await (await fetch('/api/schema')).json();
-      const field = document.getElementById('annotationField');
-      const selected = field.value;
-      field.innerHTML = '<option value="">\u6807\u6ce8\u5b57\u6bb5</option>' + Object.keys(schema || {}).map(key => (
-        `<option value="${escapeAttr(key)}">${escapeHtml(key)}</option>`
-      )).join('');
-      field.value = selected;
+      try {
+        const schema = await fetchJson('/api/schema');
+        const field = document.getElementById('annotationField');
+        const selected = field.value;
+        field.innerHTML = '<option value="">标注字段</option>' + Object.keys(schema || {}).map(key => (
+          `<option value="${escapeAttr(key)}">${escapeHtml(key)}</option>`
+        )).join('');
+        field.value = selected;
+      } catch (error) {
+        document.getElementById('annotationField').innerHTML = '<option value="">标注字段加载失败</option>';
+      }
     }
 
     function updateAnnotationValues() {
@@ -240,7 +916,7 @@
       const valueSelect = document.getElementById('annotationValue');
       const selected = selectedAnnotationValues();
       if (!field) {
-        valueSelect.innerHTML = '<option value="">\u5b57\u6bb5\u503c</option>';
+        valueSelect.innerHTML = '<option value="">字段值</option>';
         return;
       }
       const values = new Set();
@@ -254,7 +930,7 @@
           values.add(formatValue(value));
         }
       });
-      valueSelect.innerHTML = '<option value="">\u5168\u90e8\u503c</option>' + [...values].sort().map(value => (
+      valueSelect.innerHTML = '<option value="">全部值</option>' + [...values].sort().map(value => (
         `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`
       )).join('');
       [...valueSelect.options].forEach(option => {
@@ -291,19 +967,21 @@
       currentPage = Math.min(Math.max(1, currentPage), totalPages);
       const start = (currentPage - 1) * pageSize;
       const tasks = filteredTasks.slice(start, start + pageSize);
-      document.getElementById('count').textContent = `${filteredTasks.length} \u6761`;
-      document.getElementById('tasks').innerHTML = tasks.map(renderTaskButton).join('');
+      document.getElementById('count').textContent = `${filteredTasks.length} 条`;
+      document.getElementById('tasks').innerHTML = tasks.length
+        ? tasks.map(renderTaskButton).join('')
+        : '<div class="empty-state compact"><div><strong>没有匹配任务</strong><span>调整筛选条件后再试。</span></div></div>';
       document.querySelectorAll('.task').forEach(btn => btn.addEventListener('click', () => loadTask(btn.dataset.id)));
       renderPagination(totalPages);
     }
 
     function renderPagination(totalPages) {
       document.getElementById('pagination').innerHTML = `
-        <button onclick="goPage(1)" ${currentPage === 1 ? 'disabled' : ''}>\u00ab</button>
-        <button onclick="goPage(currentPage - 1)" ${currentPage === 1 ? 'disabled' : ''}>\u2039</button>
-        <span class="muted">${currentPage}/${totalPages}</span>
-        <button onclick="goPage(currentPage + 1)" ${currentPage === totalPages ? 'disabled' : ''}>\u203a</button>
-        <button onclick="goPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>\u00bb</button>
+        <button onclick="goPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>
+        <button onclick="goPage(currentPage - 1)" ${currentPage === 1 ? 'disabled' : ''}>‹</button>
+        <span class="muted mono">${currentPage}/${totalPages}</span>
+        <button onclick="goPage(currentPage + 1)" ${currentPage === totalPages ? 'disabled' : ''}>›</button>
+        <button onclick="goPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>
       `;
     }
 
@@ -313,67 +991,214 @@
     }
 
     function renderTaskButton(t) {
-      const subtitle = payloadSubtitle(t.payload || {});
+      const payload = t.payload || {};
+      const subtitle = payloadSubtitle(payload);
+      const signals = taskSignals(t, payload);
       return `<button class="task${t.task_id === currentId ? ' active' : ''}" data-id="${escapeAttr(t.task_id)}">
-        <div class="task-title">${escapeHtml(t.task_id)}</div>
-        ${subtitle ? `<div class="muted">${escapeHtml(subtitle)}</div>` : ''}
-        <div class="task-meta"><span class="badge ${escapeAttr(t.status)}">${escapeHtml(t.status)}</span><span class="muted">${escapeHtml(t.updated_at || '')}</span></div>
+        <div class="task-top">
+          <div class="task-title">${escapeHtml(t.task_id)}</div>
+          <span class="badge ${escapeAttr(t.status)}">${escapeHtml(labels[t.status] || t.status)}</span>
+        </div>
+        ${subtitle ? `<div class="task-subtitle">${escapeHtml(subtitle)}</div>` : ''}
+        <div class="task-signals">${signals.map(item => `<span class="signal">${escapeHtml(item)}</span>`).join('')}</div>
+        <div class="task-meta"><span class="muted">更新</span><span class="muted mono">${escapeHtml(t.updated_at || '-')}</span></div>
       </button>`;
+    }
+
+    function taskSignals(task, payload) {
+      const annotation = task.annotation || {};
+      const contextTurns = Array.isArray(payload.context_turns) ? payload.context_turns.length : 0;
+      const signals = [`字段 ${Object.keys(annotation).length}`];
+      if (contextTurns) signals.push(`上下文 ${contextTurns}`);
+      if (task.review_reason) signals.push('有批注');
+      return signals;
     }
 
     async function loadTask(id) {
       currentId = id;
-      const task = await (await fetch(`/api/tasks/${encodeURIComponent(id)}`)).json();
+      const message = document.getElementById('message');
+      message.textContent = '正在加载任务详情...';
+      message.className = 'muted message-line';
+      let task;
+      try {
+        task = await fetchJson(`/api/tasks/${encodeURIComponent(id)}`);
+      } catch (error) {
+        message.textContent = '任务详情加载失败，请重试';
+        message.className = 'danger message-line';
+        return;
+      }
       const payload = task.payload || {};
-      const sessionId = payload.session_id || deriveSessionId(task.task_id || '');
+      const sessionId = payload.session_id || '-';
+      const exchangeId = payload.exchange_id || task.task_id || '-';
+      const exchangeTime = payload.exchange_time || '-';
+      const turns = task.turns || [];
       document.getElementById('title').textContent = id;
-      document.getElementById('summary').textContent = `${task.status || ''} \u00b7 session ${sessionId || '-'} \u00b7 updated ${task.updated_at || ''}`;
-      document.getElementById('conversation').innerHTML = renderTurns(task.turns || []);
+      document.getElementById('titleBadge').className = `badge ${escapeAttr(task.status || 'pending')}`;
+      document.getElementById('titleBadge').textContent = labels[task.status] || task.status || '未选择';
+      document.getElementById('summary').innerHTML = `
+        <span>session <span class="mono">${escapeHtml(sessionId || '-')}</span></span>
+        <span>·</span>
+        <span>exchange <span class="mono">${escapeHtml(exchangeId)}</span></span>
+        <span>·</span>
+        <span>${turns.length} 条消息</span>
+        <span>·</span>
+        <span>时间 <span class="mono">${escapeHtml(exchangeTime)}</span></span>
+        <span>·</span>
+        <span>更新 <span class="mono">${escapeHtml(task.updated_at || '-')}</span></span>
+      `;
+      document.getElementById('turnCount').textContent = `${turns.length} 条消息`;
+      document.getElementById('conversation').innerHTML = turns.length
+        ? renderTurns(turns)
+        : '<div class="empty-state"><div><strong>暂无对话内容</strong><span>该任务没有返回 turns 数据。</span></div></div>';
       const contextTurns = Array.isArray(payload.context_turns) ? payload.context_turns : [];
       document.getElementById('contextCard').style.display = contextTurns.length ? '' : 'none';
       document.getElementById('contextTurns').innerHTML = contextTurns.length
-        ? `<details class="context-box"><summary>\u5c55\u5f00 ${contextTurns.length} \u6761\u5386\u53f2\u6d88\u606f</summary>${renderTurns(contextTurns)}</details>`
+        ? `<details class="context-box"><summary>展开 ${contextTurns.length} 条历史上下文消息</summary><div style="margin-top:10px">${renderTurns(contextTurns)}</div></details>`
         : '';
       document.getElementById('payload').textContent = JSON.stringify(displayPayload(payload), null, 2);
-      document.getElementById('annotation').value = JSON.stringify(task.annotation || {}, null, 2);
+      originalAnnotationText = JSON.stringify(task.annotation || {}, null, 2);
+      document.getElementById('annotation').value = originalAnnotationText;
       document.getElementById('reason').value = task.review_reason || '';
+      selectedAnnotationField = null;
+      setAnnotationJsonOpen(false);
       renderAnnotationPreview(task.annotation || {});
-      document.getElementById('message').textContent = '';
+      message.textContent = '';
+      validateAnnotationEditor();
       await loadTasks();
     }
 
     function renderAnnotationPreview(annotation) {
       document.getElementById('annotationPreview').innerHTML = Object.entries(annotation).map(([key, value]) => `
-        <div class="field-card"><div class="field-key">${escapeHtml(key)}</div><div>${escapeHtml(formatValue(value))}</div></div>
-      `).join('') || '<span class="muted">\u6682\u65e0\u6807\u6ce8\u7ed3\u679c</span>';
+        <button class="field-card${key === selectedAnnotationField ? ' selected' : ''}" type="button" data-field="${escapeAttr(key)}" data-value="${escapeAttr(formatValue(value))}">
+          <div class="field-key">${escapeHtml(key)}</div>
+          <div class="field-value">${escapeHtml(formatValue(value))}</div>
+        </button>
+      `).join('') || '<span class="muted">暂无标注结果</span>';
+      document.querySelectorAll('.field-card').forEach(card => card.addEventListener('click', () => {
+        appendReviewFieldNote(card.dataset.field, card.dataset.value);
+      }));
+    }
+
+    function appendReviewFieldNote(field, value) {
+      selectedAnnotationField = field;
+      document.querySelectorAll('.field-card').forEach(card => card.classList.toggle('selected', card.dataset.field === field));
+      const textarea = document.getElementById('reason');
+      const prefix = `${field}:`;
+      const lines = textarea.value.split('\n');
+      const existingIndex = lines.findIndex(line => line.trimStart().startsWith(prefix));
+      if (existingIndex >= 0) {
+        const before = lines.slice(0, existingIndex).join('\n');
+        const position = (before ? before.length + 1 : 0) + lines[existingIndex].length;
+        textarea.focus();
+        textarea.setSelectionRange(position, position);
+        return;
+      }
+      const insertion = `${field}: ${value} - `;
+      if (textarea.value && !textarea.value.endsWith('\n')) textarea.value += '\n';
+      const start = textarea.value.length;
+      textarea.value += insertion;
+      textarea.focus();
+      textarea.setSelectionRange(start + insertion.length, start + insertion.length);
+    }
+
+    function validateAnnotationEditor() {
+      const jsonState = document.getElementById('jsonState');
+      const dirtyState = document.getElementById('dirtyState');
+      const value = document.getElementById('annotation').value;
+      if (!currentId) {
+        jsonState.textContent = '未选择任务';
+        jsonState.className = 'status-pill';
+        dirtyState.textContent = '未修改';
+        dirtyState.className = 'status-pill';
+        setSubmitEnabled(false);
+        return false;
+      }
+      try {
+        JSON.parse(value);
+        jsonState.textContent = 'JSON 有效';
+        jsonState.className = 'status-pill ok';
+      } catch (e) {
+        jsonState.textContent = 'JSON 无效';
+        jsonState.className = 'status-pill danger';
+        dirtyState.textContent = value === originalAnnotationText ? '未修改' : '有未保存修改';
+        dirtyState.className = value === originalAnnotationText ? 'status-pill' : 'status-pill warn';
+        setSubmitEnabled(false);
+        return false;
+      }
+      dirtyState.textContent = value === originalAnnotationText ? '未修改' : '有未保存修改';
+      dirtyState.className = value === originalAnnotationText ? 'status-pill' : 'status-pill warn';
+      setSubmitEnabled(true);
+      return true;
+    }
+
+    function setAnnotationJsonOpen(open, focusEditor = false) {
+      const panel = document.getElementById('annotationJsonPanel');
+      const hint = document.getElementById('jsonToggleHint');
+      if (!panel || !hint) return;
+      panel.toggleAttribute('open', open);
+      hint.textContent = open ? '收起' : '展开';
+      if (open && focusEditor) {
+        const editor = document.getElementById('annotation');
+        requestAnimationFrame(() => editor.focus());
+      }
     }
 
     async function submitReview() {
-      if (!currentId) return;
-      let annotation;
       const message = document.getElementById('message');
+      if (!currentId) {
+        message.textContent = '请先从左侧选择一条任务';
+        message.className = 'warn message-line';
+        return;
+      }
+      let annotation;
       try { annotation = JSON.parse(document.getElementById('annotation').value); }
-      catch (e) { message.textContent = 'Annotation JSON \u65e0\u6548'; message.className = 'danger'; return; }
-      const res = await fetch(`/api/tasks/${encodeURIComponent(currentId)}/review`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({annotation, reason: document.getElementById('reason').value})
-      });
+      catch (e) { message.textContent = 'Annotation JSON 无效'; message.className = 'danger message-line'; setAnnotationJsonOpen(true, true); validateAnnotationEditor(); return; }
+      message.textContent = '正在提交...';
+      message.className = 'muted message-line';
+      setSubmitEnabled(false);
+      let res;
+      try {
+        res = await fetch(`/api/tasks/${encodeURIComponent(currentId)}/review`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({annotation, reason: document.getElementById('reason').value})
+        });
+      } catch (error) {
+        message.textContent = '提交失败，请检查服务连接后重试';
+        message.className = 'danger message-line';
+        validateAnnotationEditor();
+        return;
+      }
       if (res.ok) {
-        message.textContent = '\u5df2\u63d0\u4ea4\uff0c\u53ef\u7ee7\u7eed\u7f16\u8f91\u540e\u518d\u6b21\u63d0\u4ea4';
-        message.className = 'ok';
+        message.textContent = '已提交，可继续编辑后再次提交';
+        message.className = 'ok message-line';
+        originalAnnotationText = JSON.stringify(annotation, null, 2);
+        document.getElementById('annotation').value = originalAnnotationText;
         renderAnnotationPreview(annotation);
+        validateAnnotationEditor();
         await refreshAll();
       } else {
         const body = await res.json().catch(() => ({}));
-        message.textContent = body.error || '\u63d0\u4ea4\u5931\u8d25';
-        message.className = 'danger';
+        message.textContent = body.error || '提交失败';
+        message.className = 'danger message-line';
+        validateAnnotationEditor();
       }
+    }
+
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      return res.json();
+    }
+
+    function setSubmitEnabled(enabled) {
+      const button = document.getElementById('submitReviewBtn');
+      if (button) button.disabled = !enabled;
     }
 
     async function exportCases() {
       const msg = document.getElementById('exportMessage');
-      msg.textContent = '\u6b63\u5728\u5bfc\u51fa...';
+      msg.textContent = '正在导出...';
       msg.className = 'muted';
       const statusValue = document.getElementById('exportStatus').value;
       const statuses = statusValue === 'all' ? 'all' : statusValue.split(',');
@@ -388,34 +1213,34 @@
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        msg.textContent = `\u5df2\u5bfc\u51fa ${body.cases} \u6761\uff1a${body.cases_path}`;
+        msg.textContent = `已导出 ${body.cases} 条：${body.cases_path}`;
         msg.className = 'ok';
         await refreshAll();
       } else {
-        msg.textContent = body.error || '\u5bfc\u51fa\u5931\u8d25';
+        msg.textContent = body.error || '导出失败';
         msg.className = 'danger';
       }
     }
 
     async function retryFailed() {
       const msg = document.getElementById('failureMessage');
-      msg.textContent = '\u6b63\u5728\u91cd\u8bd5\u5931\u8d25\u4efb\u52a1...';
+      msg.textContent = '正在重试失败任务...';
       msg.className = 'muted';
       const res = await fetch('/api/label/retry-failed', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        msg.textContent = `\u91cd\u8bd5\u5b8c\u6210\uff1alabeled=${body.labeled || 0}, failed=${body.failed || 0}, log=${body.log_path || '-'}`;
+        msg.textContent = `重试完成：labeled=${body.labeled || 0}, failed=${body.failed || 0}, log=${body.log_path || '-'}`;
         msg.className = 'ok';
         await refreshAll();
       } else {
-        msg.textContent = body.error || '\u91cd\u8bd5\u5931\u8d25';
+        msg.textContent = body.error || '重试失败';
         msg.className = 'danger';
       }
     }
 
     async function exportFailures() {
       const msg = document.getElementById('failureMessage');
-      msg.textContent = '\u6b63\u5728\u5bfc\u51fa\u5931\u8d25\u62a5\u544a...';
+      msg.textContent = '正在导出失败报告...';
       msg.className = 'muted';
       const res = await fetch('/api/failures/export', {
         method: 'POST',
@@ -424,34 +1249,42 @@
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        msg.textContent = `\u5df2\u5bfc\u51fa ${body.failures} \u6761\uff1a${body.path}`;
+        msg.textContent = `已导出 ${body.failures} 条：${body.path}`;
         msg.className = 'ok';
       } else {
-        msg.textContent = body.error || '\u5bfc\u51fa\u5931\u8d25';
+        msg.textContent = body.error || '导出失败';
         msg.className = 'danger';
       }
     }
 
     function payloadSubtitle(payload) {
-      const keys = ['session_id', 'conversation_id', '\u4f1a\u8bddID', '\u7528\u6237ID', '\u6e20\u9053'];
-      return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' \u00b7 ');
+      const keys = ['session_id', 'exchange_id', 'exchange_time', '用户ID', '渠道'];
+      return keys.filter(k => payload[k]).map(k => `${k}: ${payload[k]}`).slice(0, 2).join(' · ');
     }
     function displayPayload(payload) {
       const copy = {...payload};
       delete copy.context_turns;
       return copy;
     }
-    function deriveSessionId(taskId) {
-      return String(taskId).replace(/_\d+$/, '');
-    }
     function renderTurns(turns) {
-      return turns.map(t => `<div class="turn ${escapeAttr(t.role)}"><div class="role">${escapeHtml(t.role)}</div><div>${escapeHtml(t.content)}</div></div>`).join('');
+      return turns.map((t, index) => `<div class="turn ${escapeAttr(t.role)}">
+        <div class="role">${escapeHtml(roleLabel(t.role))} · ${String(index + 1).padStart(2, '0')}</div>
+        <div class="turn-content">${escapeHtml(t.content)}</div>
+      </div>`).join('');
+    }
+    function roleLabel(role) {
+      const map = { user: '用户', assistant: '助手', system: '系统' };
+      return map[role] || role || '未知';
     }
     function formatValue(value) { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
     function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
+
     document.getElementById('status').addEventListener('change', loadTasks);
     document.getElementById('order').addEventListener('change', loadTasks);
+    document.getElementById('query').addEventListener('keydown', event => {
+      if (event.key === 'Enter') loadTasks();
+    });
     document.getElementById('annotationField').addEventListener('change', () => {
       currentPage = 1;
       updateAnnotationValues();
@@ -460,6 +1293,10 @@
     document.getElementById('annotationValue').addEventListener('change', () => {
       currentPage = 1;
       applyTaskFilters();
+    });
+    document.getElementById('annotation').addEventListener('input', validateAnnotationEditor);
+    document.getElementById('annotationJsonPanel').addEventListener('toggle', event => {
+      document.getElementById('jsonToggleHint').textContent = event.currentTarget.open ? '收起' : '展开';
     });
     refreshAll();
   </script>

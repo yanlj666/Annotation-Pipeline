@@ -1,26 +1,26 @@
 model:
-  endpoint: ${OPENCLAW_ENDPOINT}
-  api_key: ${OPENCLAW_API_KEY}
-  name: "openclaw-model"
-  timeout: 120
+  endpoint: mock://acceptance
+  api_key: ""
+  name: "mock-acceptance"
+  timeout: 30
   temperature: 0
   top_p: 1
   seed: null
   thinking:
     enabled: false
 engine:
-  concurrency: 5
-  interval_ms: 200
+  concurrency: 1
+  interval_ms: 0
   rate_limit_per_min: 120
-  burst: 5
-  max_retries: 3
+  burst: 1
+  max_retries: 0
   sample_size: null
   progress: true
-  log_dir: "logs"
+  log_dir: "logs/ui_acceptance"
   alert_failure_rate: 0.3
   alert_consecutive_failures: 5
 task: "intent_v1"
-database: "data/pipeline.db"
+database: "data/ui_acceptance.db"
 export:
   masking: true
   mask_fields: [phone, id_card, name, full_address]

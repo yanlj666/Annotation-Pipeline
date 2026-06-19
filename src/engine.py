@@ -229,6 +229,66 @@ async def run_labeling(
         run_logger.close()
 
 
+async def run_preflight(
+    config: dict[str, Any],
+    task_config: dict[str, Any],
+    store: Store,
+    statuses: list[str] | tuple[str, ...] | str = "pending",
+    sample_size: int = 1,
+    strict: bool = True,
+) -> dict[str, Any]:
+    store.init()
+    selected_statuses = _parse_statuses(statuses)
+    tasks = store.list_tasks(selected_statuses, sample_size)
+    client = LLMClient(config)
+    mock_reason = client.mock_reason()
+    if mock_reason and strict:
+        return {
+            "ok": False,
+            "checked": 0,
+            "error_type": "data_error",
+            "error": f"mock mode refused by preflight: {mock_reason}",
+            "mock": True,
+        }
+    results = []
+    ok = True
+    for task in tasks:
+        started = time.monotonic()
+        item: dict[str, Any] = {"task_id": task["task_id"], "status": task["status"]}
+        try:
+            annotation = await _label_once(client, task_config, task)
+            validate_output(annotation, task_config["output_schema"])
+            item.update(
+                {
+                    "ok": True,
+                    "elapsed": round(time.monotonic() - started, 3),
+                    "annotation": annotation,
+                    "usage": client.last_usage or {},
+                }
+            )
+        except Exception as exc:
+            ok = False
+            item.update(
+                {
+                    "ok": False,
+                    "elapsed": round(time.monotonic() - started, 3),
+                    "error_type": classify_error(exc),
+                    "error": str(exc),
+                    "usage": client.last_usage or {},
+                }
+            )
+        results.append(item)
+    return {
+        "ok": ok and bool(results),
+        "checked": len(results),
+        "results": results,
+        "statuses": selected_statuses,
+        "mock": bool(mock_reason),
+        "mock_reason": mock_reason,
+        "sampling": resolve_sampling_config(config, task_config),
+    }
+
+
 async def _label_once(client: LLMClient, task_config: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
     prompt = task_config["prompt"]
     turns = json.dumps(task["turns"], ensure_ascii=False, indent=2)
@@ -266,6 +326,7 @@ def resolve_sampling_config(config: dict[str, Any], task_config: dict[str, Any])
         "temperature": _first_configured(task_config, model_cfg, "temperature", 0),
         "top_p": _first_configured(task_config, model_cfg, "top_p", 1),
         "seed": _first_configured(task_config, model_cfg, "seed", None),
+        "thinking": _first_configured(task_config, model_cfg, "thinking", {"enabled": False}),
     }
 
 
@@ -300,6 +361,12 @@ def validate_output(annotation: dict[str, Any], schema: dict[str, Any]) -> None:
             raise ValueError(f"{key} must be array")
         if typ == "object" and not isinstance(value, dict):
             raise ValueError(f"{key} must be object")
+        enum = spec.get("enum")
+        if enum is not None:
+            if not isinstance(enum, list):
+                raise ValueError(f"{key} enum must be array")
+            if value not in enum:
+                raise ValueError(f"{key} must be one of {enum}; got {value!r}")
 
 
 def _parse_statuses(statuses: list[str] | tuple[str, ...] | str) -> list[str]:

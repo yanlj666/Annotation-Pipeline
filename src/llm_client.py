@@ -13,6 +13,7 @@ class LLMClient:
         self.api_key = _resolve_env(model.get("api_key"))
         self.model = model.get("name", "model")
         self.timeout = int(model.get("timeout", 120))
+        self.last_usage: dict[str, Any] | None = None
 
     async def complete_json_async(
         self,
@@ -29,6 +30,7 @@ class LLMClient:
                 body = resp.json()
         except httpx.HTTPError as exc:
             raise exc
+        self.last_usage = body.get("usage") if isinstance(body.get("usage"), dict) else None
         return _parse_content(body)
 
     def complete_json(
@@ -46,6 +48,7 @@ class LLMClient:
                 body = resp.json()
         except httpx.HTTPError as exc:
             raise exc
+        self.last_usage = body.get("usage") if isinstance(body.get("usage"), dict) else None
         return _parse_content(body)
 
     def _url(self) -> str:
@@ -62,13 +65,16 @@ class LLMClient:
         payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": sampling["temperature"],
-            "top_p": sampling["top_p"],
             "response_format": {"type": "json_object"},
         }
-        seed = sampling.get("seed")
-        if isinstance(seed, int) and not isinstance(seed, bool):
-            payload["seed"] = seed
+        if thinking_enabled(sampling.get("thinking")):
+            payload["thinking"] = {"type": "enabled"}
+        else:
+            payload["temperature"] = sampling["temperature"]
+            payload["top_p"] = sampling["top_p"]
+            seed = sampling.get("seed")
+            if isinstance(seed, int) and not isinstance(seed, bool):
+                payload["seed"] = seed
         return payload
 
     def _payload_body(self, messages: list[dict[str, str]], sampling: dict[str, Any] | None = None) -> bytes:
@@ -116,6 +122,14 @@ class LLMClient:
 def _parse_content(body: dict[str, Any]) -> dict[str, Any]:
     content = body["choices"][0]["message"]["content"]
     return json.loads(content)
+
+
+def thinking_enabled(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, dict):
+        return bool(value.get("enabled", False))
+    return False
 
 
 def _resolve_env(value: Any) -> str:

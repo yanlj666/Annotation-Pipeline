@@ -15,14 +15,14 @@ MAX_TURN_CHARS = 12000
 def ingest_file(input_path: str, mapping: dict[str, Any], store: Store) -> dict[str, int]:
     store.init()
     cfg = mapping["import_mapping"]
+    _validate_mapping(cfg)
     source_format = cfg.get("source_format") or Path(input_path).suffix.lstrip(".")
-    rows = _read_rows(input_path, source_format)
+    rows = list(_read_rows(input_path, source_format))
+    tasks = build_tasks(rows, cfg)
     created = skipped = invalid = 0
     skipped_by_status: dict[str, int] = {}
-    for row in rows:
-        try:
-            task = normalize_row(row, cfg)
-        except ValueError:
+    for task in tasks:
+        if task is None:
             invalid += 1
             continue
         if store.upsert_task(task["task_id"], task["turns"], task["payload"]):
@@ -40,51 +40,142 @@ def ingest_file(input_path: str, mapping: dict[str, Any], store: Store) -> dict[
     }
 
 
+def build_tasks(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> list[dict[str, Any] | None]:
+    mode = task_mode(cfg)
+    if mode == "turn_only":
+        return [_safe_normalize_row(row, cfg, None, mode) for row in rows]
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    order = 0
+    for row in rows:
+        row["_ap_input_order"] = order
+        order += 1
+        fields = cfg["fields"]
+        session_id = _field_value(row, fields["session_id"]).strip()
+        grouped.setdefault(session_id, []).append(row)
+
+    tasks: list[dict[str, Any] | None] = []
+    for session_id in sorted(grouped):
+        session_rows = sorted(grouped[session_id], key=lambda row: (_field_value(row, cfg["fields"]["exchange_time"]), row["_ap_input_order"]))
+        exchanges: list[dict[str, Any]] = []
+        for row in session_rows:
+            try:
+                exchanges.append(normalize_exchange(row, cfg))
+            except ValueError:
+                tasks.append(None)
+        if mode == "session":
+            if not exchanges:
+                continue
+            tasks.append(build_session_task(session_id, exchanges, cfg))
+            continue
+        context: list[dict[str, str]] = []
+        for exchange in exchanges:
+            task = build_turn_task(exchange, cfg, context if mode == "turn_with_context" else [])
+            tasks.append(task)
+            context.extend(exchange["turns"])
+    return tasks
+
+
+def _safe_normalize_row(row: dict[str, Any], cfg: dict[str, Any], context: list[dict[str, str]] | None, mode: str) -> dict[str, Any] | None:
+    try:
+        exchange = normalize_exchange(row, cfg)
+        return build_turn_task(exchange, cfg, context or [])
+    except ValueError:
+        return None
+
+
 def normalize_row(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    _validate_mapping(cfg)
+    mode = task_mode(cfg)
+    if mode == "session":
+        exchange = normalize_exchange(row, cfg)
+        return build_session_task(exchange["session_id"], [exchange], cfg)
+    exchange = normalize_exchange(row, cfg)
+    return build_turn_task(exchange, cfg, [])
+
+
+def normalize_exchange(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     fields = cfg["fields"]
-    conversation_id = _clean(str(row.get(fields["conversation_id"], "")).strip())
-    if not conversation_id:
-        raise ValueError("empty conversation id")
+    exchange_id = _field_value(row, fields["exchange_id"]).strip()
+    session_id = _field_value(row, fields["session_id"]).strip()
+    exchange_time = _field_value(row, fields["exchange_time"]).strip()
+    if not exchange_id:
+        raise ValueError("empty exchange id")
+    if not session_id:
+        raise ValueError("empty session id")
+    if not exchange_time:
+        raise ValueError("empty exchange time")
     turns_value = row.get(fields["turns"], "")
     all_turns = parse_turns(turns_value)
     if not all_turns:
-        raise ValueError("empty conversation")
+        raise ValueError("empty exchange")
     payload: dict[str, Any] = {}
     for name in cfg.get("passthrough", []):
         if name in row:
             payload[name] = row[name]
-    payload.setdefault("conversation_id", conversation_id)
-    payload.setdefault("session_id", derive_session_id(conversation_id))
-    turn_mode = str(cfg.get("turn_mode", "single")).strip().lower()
-    if turn_mode not in {"single", "conversation"}:
-        raise ValueError(f"unsupported turn_mode: {turn_mode}")
-    context_turns, turns = split_current_turn(all_turns)
-    if turn_mode == "conversation" and context_turns:
-        payload["context_turns"] = context_turns
-    return {"task_id": make_task_id(conversation_id), "turns": turns, "payload": payload, "status": "pending"}
+    payload["session_id"] = session_id
+    payload["exchange_id"] = exchange_id
+    payload["exchange_time"] = exchange_time
+    return {
+        "task_id": make_task_id(exchange_id),
+        "exchange_id": exchange_id,
+        "session_id": session_id,
+        "exchange_time": exchange_time,
+        "turns": all_turns,
+        "payload": payload,
+        "status": "pending",
+    }
 
 
-def make_task_id(conversation_id: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", conversation_id).strip("_")
+def build_turn_task(exchange: dict[str, Any], cfg: dict[str, Any], context_turns: list[dict[str, str]]) -> dict[str, Any]:
+    payload = dict(exchange["payload"])
+    if context_turns:
+        payload["context_turns"] = list(context_turns)
+    return {"task_id": exchange["task_id"], "turns": exchange["turns"], "payload": payload, "status": "pending"}
+
+
+def build_session_task(session_id: str, exchanges: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any]:
+    turns: list[dict[str, str]] = []
+    exchange_ids = []
+    for exchange in exchanges:
+        exchange_ids.append(exchange["exchange_id"])
+        turns.extend(exchange["turns"])
+    payload: dict[str, Any] = {"session_id": session_id, "exchange_ids": exchange_ids}
+    for name in cfg.get("passthrough", []):
+        values = [exchange["payload"].get(name) for exchange in exchanges if name in exchange["payload"]]
+        if values and all(value == values[0] for value in values):
+            payload[name] = values[0]
+    return {"task_id": make_task_id(session_id), "turns": turns, "payload": payload, "status": "pending"}
+
+
+def make_task_id(source_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", source_id).strip("_")
     if safe:
         return safe[:160]
-    return hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+    return hashlib.sha256(source_id.encode("utf-8")).hexdigest()
 
 
-def derive_session_id(conversation_id: str) -> str:
-    match = re.match(r"^(?P<session>.+)_\d+$", conversation_id)
-    return match.group("session") if match else conversation_id
+def task_mode(cfg: dict[str, Any]) -> str:
+    mode = str(cfg.get("task_mode", "turn_with_context")).strip().lower()
+    if mode not in {"turn_with_context", "turn_only", "session"}:
+        raise ValueError(f"unsupported task_mode: {mode}")
+    return mode
 
 
-def split_current_turn(turns: list[dict[str, str]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    if not turns:
-        return [], []
-    start = len(turns) - 1
-    for index in range(len(turns) - 1, -1, -1):
-        if turns[index].get("role") == "user":
-            start = index
-            break
-    return turns[:start], turns[start:]
+def _validate_mapping(cfg: dict[str, Any]) -> None:
+    if "turn_mode" in cfg:
+        raise ValueError(
+            "import_mapping.turn_mode has been replaced by import_mapping.task_mode. "
+            "Use task_mode: turn_only, turn_with_context, or session."
+        )
+    fields = cfg.get("fields", {})
+    missing = [key for key in ("session_id", "exchange_id", "exchange_time", "turns") if not fields.get(key)]
+    if missing:
+        raise ValueError(f"missing import_mapping.fields: {', '.join(missing)}")
+
+
+def _field_value(row: dict[str, Any], field_name: str) -> str:
+    return _clean(str(row.get(field_name, "")).strip())
 
 
 def parse_turns(value: Any) -> list[dict[str, str]]:

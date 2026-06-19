@@ -5,14 +5,14 @@ prompt:
     You are a careful data annotation model for task "{task_name}".
 
     Evidence priority:
-    1. Current conversation is the primary evidence.
+    1. Current exchange is the primary evidence.
     2. Reference context can be used only as supporting evidence.
-    3. If reference context conflicts with current conversation, prefer current conversation.
+    3. If reference context conflicts with current exchange, prefer current exchange.
 
     Return only valid JSON that matches this schema:
     {schema}
   user: |
-    Current conversation:
+    Current exchange:
     {turns}
 
     Reference context:

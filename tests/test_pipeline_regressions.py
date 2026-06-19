@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sqlite3
 import tempfile
@@ -5,86 +6,124 @@ import unittest
 from pathlib import Path
 
 from src.batch import archive_batch, batch_status, create_batch, merge_exports
-from src.engine import run_labeling
+from src.engine import render_prompt_template, resolve_sampling_config, run_labeling, run_preflight, validate_output
 from src.export import export_reviewed
-from src.engine import render_prompt_template, resolve_sampling_config
 from src.ingest import ingest_file, normalize_row, parse_turns
 from src.llm_client import LLMClient
 from src.store import Store
-import asyncio
+
+
+FIELDS = {
+    "session_id": "session_id",
+    "exchange_id": "exchange_id",
+    "exchange_time": "exchange_time",
+    "turns": "turns",
+}
 
 
 class IngestRegressionTests(unittest.TestCase):
     def test_parse_turns_repairs_smart_quote_json(self) -> None:
-        value = "[{“role”: “user”, “content”: “你好”}, {“role”: “assistant”, “content”: “可以”}]"
+        value = '[{“role”: “user”, “content”: “hello”}, {“role”: “assistant”, “content”: “ok”}]'
 
         self.assertEqual(
             parse_turns(value),
-            [{"role": "user", "content": "你好"}, {"role": "assistant", "content": "可以"}],
+            [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "ok"}],
         )
 
-    def test_default_turn_mode_is_single_and_derives_session(self) -> None:
+    def test_default_task_mode_keeps_current_exchange(self) -> None:
         row = {
-            "会话ID": "6387743448_3",
-            "对话内容": json.dumps(
+            "session_id": "s1",
+            "exchange_id": "s1_2",
+            "exchange_time": "2026-01-01T10:01:00",
+            "turns": json.dumps(
                 [
-                    {"role": "user", "content": "第一问"},
-                    {"role": "assistant", "content": "第一答"},
-                    {"role": "user", "content": "当前问"},
-                    {"role": "assistant", "content": "当前答"},
-                ],
-                ensure_ascii=False,
+                    {"role": "user", "content": "current question"},
+                    {"role": "assistant", "content": "current answer"},
+                ]
             ),
         }
-        cfg = {"fields": {"conversation_id": "会话ID", "turns": "对话内容"}}
 
-        task = normalize_row(row, cfg)
+        task = normalize_row(row, {"fields": FIELDS})
 
-        self.assertEqual(task["task_id"], "6387743448_3")
-        self.assertEqual(task["payload"]["session_id"], "6387743448")
-        self.assertEqual(task["payload"]["conversation_id"], "6387743448_3")
+        self.assertEqual(task["task_id"], "s1_2")
+        self.assertEqual(task["payload"]["session_id"], "s1")
+        self.assertEqual(task["payload"]["exchange_id"], "s1_2")
         self.assertEqual(
             task["turns"],
-            [{"role": "user", "content": "当前问"}, {"role": "assistant", "content": "当前答"}],
+            [{"role": "user", "content": "current question"}, {"role": "assistant", "content": "current answer"}],
         )
         self.assertNotIn("context_turns", task["payload"])
 
-    def test_conversation_mode_keeps_context_in_payload(self) -> None:
+    def test_turn_only_omits_context(self) -> None:
         row = {
-            "会话ID": "s1_2",
-            "对话内容": json.dumps(
+            "session_id": "s1",
+            "exchange_id": "s1_2",
+            "exchange_time": "2026-01-01T10:01:00",
+            "turns": json.dumps(
                 [
-                    {"role": "user", "content": "上文问"},
-                    {"role": "assistant", "content": "上文答"},
-                    {"role": "user", "content": "当前问"},
-                ],
-                ensure_ascii=False,
+                    {"role": "user", "content": "current question"},
+                ]
             ),
         }
-        cfg = {
-            "turn_mode": "conversation",
-            "fields": {"conversation_id": "会话ID", "turns": "对话内容"},
-        }
 
-        task = normalize_row(row, cfg)
+        task = normalize_row(row, {"task_mode": "turn_only", "fields": FIELDS})
 
-        self.assertEqual(task["turns"], [{"role": "user", "content": "当前问"}])
-        self.assertEqual(
-            task["payload"]["context_turns"],
-            [{"role": "user", "content": "上文问"}, {"role": "assistant", "content": "上文答"}],
-        )
+        self.assertEqual(task["turns"], [{"role": "user", "content": "current question"}])
+        self.assertNotIn("context_turns", task["payload"])
+
+    def test_ingest_groups_exchanges_by_session_and_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            csv_path = tmp_path / "input.csv"
+            csv_path.write_text(
+                "session_id,exchange_id,exchange_time,turns\n"
+                's1,s1_2,2026-01-01T10:02:00,"[{""role"": ""user"", ""content"": ""second""}]"\n'
+                's1,s1_1,2026-01-01T10:01:00,"[{""role"": ""user"", ""content"": ""first""}]"\n',
+                encoding="utf-8",
+            )
+            store = Store(str(tmp_path / "pipeline.db"))
+            mapping = {"import_mapping": {"source_format": "csv", "task_mode": "turn_with_context", "fields": FIELDS}}
+
+            ingest_file(str(csv_path), mapping, store)
+            task = store.get_task("s1_2")
+
+        self.assertEqual(task["turns"], [{"role": "user", "content": "second"}])
+        self.assertEqual(task["payload"]["context_turns"], [{"role": "user", "content": "first"}])
+
+    def test_session_mode_creates_one_task_per_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            csv_path = tmp_path / "input.csv"
+            csv_path.write_text(
+                "session_id,exchange_id,exchange_time,turns\n"
+                's1,s1_2,2026-01-01T10:02:00,"[{""role"": ""assistant"", ""content"": ""second""}]"\n'
+                's1,s1_1,2026-01-01T10:01:00,"[{""role"": ""user"", ""content"": ""first""}]"\n',
+                encoding="utf-8",
+            )
+            store = Store(str(tmp_path / "pipeline.db"))
+            mapping = {"import_mapping": {"source_format": "csv", "task_mode": "session", "fields": FIELDS}}
+
+            ingest_file(str(csv_path), mapping, store)
+            task = store.get_task("s1")
+
+        self.assertEqual(task["turns"], [{"role": "user", "content": "first"}, {"role": "assistant", "content": "second"}])
+        self.assertEqual(task["payload"]["exchange_ids"], ["s1_1", "s1_2"])
+
+    def test_old_turn_mode_fails_with_migration_hint(self) -> None:
+        with self.assertRaisesRegex(ValueError, "task_mode"):
+            normalize_row({}, {"turn_mode": "single", "fields": {}})
 
     def test_ingest_is_idempotent_by_task_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             csv_path = tmp_path / "input.csv"
             csv_path.write_text(
-                "会话ID,对话内容\n"
-                'task-1,"[{""role"": ""user"", ""content"": ""hello""}]"\n',
+                "session_id,exchange_id,exchange_time,turns\n"
+                's1,task-1,2026-01-01T10:00:00,"[{""role"": ""user"", ""content"": ""hello""}]"\n',
                 encoding="utf-8",
             )
             store = Store(str(tmp_path / "pipeline.db"))
-            mapping = {"import_mapping": {"source_format": "csv", "fields": {"conversation_id": "会话ID", "turns": "对话内容"}}}
+            mapping = {"import_mapping": {"source_format": "csv", "fields": FIELDS}}
 
             first = ingest_file(str(csv_path), mapping, store)
             second = ingest_file(str(csv_path), mapping, store)
@@ -102,13 +141,13 @@ class ExportRegressionTests(unittest.TestCase):
             store.init()
             store.upsert_task(
                 "s1_2",
-                [{"role": "user", "content": f"当前手机号 {phone}"}],
+                [{"role": "user", "content": f"current phone {phone}"}],
                 {
                     "session_id": "s1",
-                    "context_turns": [{"role": "assistant", "content": "很长的历史上下文"}],
+                    "context_turns": [{"role": "assistant", "content": "long history context"}],
                 },
             )
-            store.mark_reviewed("s1_2", {"label": "ok"}, f"联系 {phone}")
+            store.mark_reviewed("s1_2", {"label": "ok"}, f"contact {phone}")
             task_config_path = tmp_path / "task.yaml"
             task_config_path.write_text("output_schema: {}\n", encoding="utf-8")
 
@@ -117,27 +156,27 @@ class ExportRegressionTests(unittest.TestCase):
                 str(task_config_path),
                 {"export": {"masking": True, "mask_fields": ["phone"]}, "task": "intent_v1"},
                 str(tmp_path / "out"),
-                snippet_chars=3,
+                snippet_chars=7,
             )
             line = Path(result["cases_path"]).read_text(encoding="utf-8").strip()
             exported = json.loads(line)
 
         self.assertEqual(exported["payload"]["session_id"], "s1")
-        self.assertEqual(exported["review_reason"], "联系 [PHONE]")
-        self.assertEqual(exported["turns"][0]["content"], "当前手")
+        self.assertEqual(exported["review_reason"], "contact [PHONE]")
+        self.assertEqual(exported["turns"][0]["content"], "current")
         self.assertEqual(exported["current_turn"], exported["turns"])
-        self.assertEqual(exported["context_turns"][0]["content"], "很长的")
+        self.assertEqual(exported["context_turns"][0]["content"], "long hi")
         self.assertNotIn("context_turns", exported["payload"])
 
 
 class LLMClientRegressionTests(unittest.TestCase):
     def test_payload_body_uses_utf8_json_without_ascii_escaping(self) -> None:
         client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
-        body = client._payload_body([{"role": "user", "content": "中文…"}])
+        body = client._payload_body([{"role": "user", "content": "中文"}])
 
         self.assertIsInstance(body, bytes)
-        self.assertIn("中文…", body.decode("utf-8"))
-        self.assertEqual(json.loads(body.decode("utf-8"))["messages"][0]["content"], "中文…")
+        self.assertIn("中文", body.decode("utf-8"))
+        self.assertEqual(json.loads(body.decode("utf-8"))["messages"][0]["content"], "中文")
 
     def test_payload_includes_default_sampling_parameters_without_null_seed(self) -> None:
         client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
@@ -161,11 +200,14 @@ class LLMClientRegressionTests(unittest.TestCase):
         self.assertEqual(payload["top_p"], 0.9)
         self.assertEqual(payload["seed"], 42)
 
-    def test_payload_omits_non_integer_seed(self) -> None:
+    def test_payload_omits_sampling_when_thinking_enabled(self) -> None:
         client = LLMClient({"model": {"endpoint": "http://example.test", "name": "m"}})
 
-        payload = client._payload([{"role": "user", "content": "hello"}], {"seed": "42"})
+        payload = client._payload([{"role": "user", "content": "hello"}], {"thinking": {"enabled": True}, "seed": 42})
 
+        self.assertEqual(payload["thinking"], {"type": "enabled"})
+        self.assertNotIn("temperature", payload)
+        self.assertNotIn("top_p", payload)
         self.assertNotIn("seed", payload)
 
 
@@ -189,12 +231,21 @@ class PromptRenderingRegressionTests(unittest.TestCase):
             {"temperature": 0, "top_p": 1, "seed": 42},
         )
 
-        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": 42})
+        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": 42, "thinking": {"enabled": False}})
 
     def test_model_sampling_falls_back_to_defaults_when_unset(self) -> None:
         sampling = resolve_sampling_config({"model": {"temperature": None, "seed": None}}, {})
 
-        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": None})
+        self.assertEqual(sampling, {"temperature": 0, "top_p": 1, "seed": None, "thinking": {"enabled": False}})
+
+
+class ValidationRegressionTests(unittest.TestCase):
+    def test_enum_must_match_exactly(self) -> None:
+        schema = {"role_level": {"type": "string", "enum": ["L6级参谋"]}}
+
+        validate_output({"role_level": "L6级参谋"}, schema)
+        with self.assertRaisesRegex(ValueError, "must be one of"):
+            validate_output({"role_level": "L6级"}, schema)
 
 
 class StoreRegressionTests(unittest.TestCase):
@@ -252,14 +303,31 @@ class LabelingRegressionTests(unittest.TestCase):
                     )
                 )
 
+    def test_preflight_refuses_mock_without_changing_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(str(Path(tmp) / "pipeline.db"))
+            store.init()
+            store.upsert_task("t1", [{"role": "user", "content": "hello"}], {})
+
+            result = asyncio.run(
+                run_preflight(
+                    {"model": {"endpoint": "${MISSING_ENDPOINT}"}, "engine": {"log_dir": str(Path(tmp) / "logs")}},
+                    {"output_schema": {"label": {"type": "string"}}, "prompt": {"system": "", "user": "{turns} {payload} {schema}"}},
+                    store,
+                )
+            )
+
+            self.assertFalse(result["ok"])
+            self.assertEqual(store.get_task("t1")["status"], "pending")
+
 
 class BatchRegressionTests(unittest.TestCase):
     def test_batch_create_archive_status_and_merge(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             source = tmp_path / "source.csv"
-            source.write_text("会话ID,对话内容\nb1,hello\nb2,world\n", encoding="utf-8")
-            created = create_batch("batch1", str(source), str(tmp_path / "batches"), sample=1, seed=2)
+            source.write_text("轮次ID,对话内容\nb1,hello\nb2,world\n", encoding="utf-8")
+            created = create_batch("batch1", str(source), str(tmp_path / "batches"), sample=1, seed=2, id_field="轮次ID")
             self.assertEqual(created["count"], 1)
 
             store = Store(str(tmp_path / "pipeline.db"))

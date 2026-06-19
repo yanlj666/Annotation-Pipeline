@@ -12,6 +12,7 @@ import yaml
 from review.server import run_server
 from src.batch import archive_batch, batch_status, create_batch, merge_exports
 from src.engine import run_labeling
+from src.engine import run_preflight
 from src.export import export_reviewed
 from src.quality import evaluate_gold
 from src.ingest import ingest_file
@@ -45,6 +46,21 @@ def main() -> None:
         "--status",
         default="pending",
         help="comma-separated task statuses to label, e.g. pending, failed, pending,failed",
+    )
+
+    preflight = sub.add_parser(
+        "preflight",
+        aliases=["validate"],
+        parents=[config_parent],
+        help="validate model labeling on a small sample",
+    )
+    preflight.add_argument("--task")
+    preflight.add_argument("--sample", type=int, default=1)
+    preflight.add_argument("--strict", action="store_true", default=True, help="fail instead of using mock annotations")
+    preflight.add_argument(
+        "--status",
+        default="pending",
+        help="comma-separated task statuses to validate, e.g. pending, failed",
     )
 
     review = sub.add_parser("review", parents=[config_parent])
@@ -125,6 +141,23 @@ def main() -> None:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
             raise SystemExit(2) from exc
         print(json.dumps(result, ensure_ascii=False))
+    elif args.command in {"preflight", "validate"}:
+        task_name = args.task or config.get("task")
+        task_config = load_task(task_name)
+        statuses = [s.strip() for s in args.status.split(",") if s.strip()]
+        result = asyncio.run(
+            run_preflight(
+                config,
+                task_config,
+                store,
+                statuses=statuses,
+                sample_size=max(1, args.sample),
+                strict=args.strict,
+            )
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        if not result.get("ok"):
+            raise SystemExit(2)
     elif args.command in {"review", "serve"}:
         task_name = args.task or config.get("task")
         task_config = load_task(task_name)
