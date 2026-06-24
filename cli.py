@@ -16,6 +16,7 @@ from src.engine import run_preflight
 from src.export import export_reviewed
 from src.quality import evaluate_gold
 from src.ingest import ingest_file
+from src.reliability import run_reliability, run_reliability_csv_pairs
 from src.store import Store
 
 
@@ -92,6 +93,16 @@ def main() -> None:
     gold = sub.add_parser("gold-eval", parents=[config_parent])
     gold.add_argument("gold_jsonl")
     gold.add_argument("--task")
+
+    reliability = sub.add_parser("reliability", parents=[config_parent], help="measure annotation consistency or gold-set agreement")
+    reliability.add_argument("--run-a", help="first run JSONL/CSV file for self-consistency")
+    reliability.add_argument("--run-b", help="second run JSONL/CSV file for self-consistency")
+    reliability.add_argument("--pred", help="prediction JSONL/CSV file for gold evaluation")
+    reliability.add_argument("--gold", help="gold JSONL/CSV file for gold evaluation")
+    reliability.add_argument("--input", help="paired CSV with <field>_r1 and <field>_r2 columns")
+    reliability.add_argument("--mode", choices=["self_consistency", "gold_eval"], default="self_consistency")
+    reliability.add_argument("--task")
+    reliability.add_argument("--out", default="reports/reliability")
 
     batch = sub.add_parser("eval-batch", parents=[config_parent], help="manage evaluation batches")
     batch_sub = batch.add_subparsers(dest="batch_command", required=True)
@@ -196,6 +207,18 @@ def main() -> None:
         task_name = args.task or config.get("task")
         task_config = load_task(task_name)
         print(json.dumps(evaluate_gold(store, args.gold_jsonl, task_config["output_schema"]), ensure_ascii=False))
+    elif args.command == "reliability":
+        task_name = args.task or config.get("task")
+        task_config = load_task(task_name)
+        if args.input:
+            result = run_reliability_csv_pairs(args.input, task_config, args.out, args.mode)
+        else:
+            left_path = args.pred if args.mode == "gold_eval" else args.run_a
+            right_path = args.gold if args.mode == "gold_eval" else args.run_b
+            if not left_path or not right_path:
+                parser.error("reliability requires --input or a pair of --run-a/--run-b or --pred/--gold")
+            result = run_reliability(left_path, right_path, task_config, args.out, args.mode)
+        print(json.dumps(result, ensure_ascii=False))
     elif args.command == "eval-batch":
         if args.batch_command == "create":
             result = create_batch(args.name, args.source, args.dir, args.sample, args.seed, args.id_field)

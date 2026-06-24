@@ -21,3 +21,8 @@ output_schema:
   intent: { type: string }
   sentiment: { type: string }
   needs_followup: { type: boolean }
+evaluation:
+  fields:
+    intent: { type: nominal }
+    sentiment: { type: nominal }
+    needs_followup: { type: binary }

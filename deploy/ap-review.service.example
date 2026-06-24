@@ -1,0 +1,16 @@
+[Unit]
+Description=Annotation Pipeline Review Workspace
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/annotation-pipeline
+EnvironmentFile=-/etc/annotation-pipeline.env
+ExecStart=/opt/annotation-pipeline/.venv/bin/python cli.py serve --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,14 @@ from src.engine import render_prompt_template, resolve_sampling_config, run_labe
 from src.export import export_reviewed
 from src.ingest import ingest_file, normalize_row, parse_turns
 from src.llm_client import LLMClient
+from src.reliability import (
+    cohen_kappa_from_pairs,
+    pabak,
+    run_reliability,
+    run_reliability_csv_pairs,
+    spearman,
+    weighted_kappa,
+)
 from src.store import Store
 
 
@@ -343,6 +351,90 @@ class BatchRegressionTests(unittest.TestCase):
             merged = merge_exports(str(tmp_path / "merged.jsonl"), str(tmp_path / "batches"))
 
             self.assertEqual(merged["merged"], 1)
+
+
+class ReliabilityRegressionTests(unittest.TestCase):
+    def test_core_metrics_have_expected_small_sample_values(self) -> None:
+        pairs = [("yes", "yes"), ("yes", "no"), ("no", "no"), ("no", "no")]
+
+        self.assertAlmostEqual(cohen_kappa_from_pairs(pairs, ["no", "yes"]), 0.5)
+        self.assertAlmostEqual(pabak(0.75, 2), 0.5)
+        self.assertAlmostEqual(weighted_kappa([(1, 1), (2, 3), (3, 3)], [1, 2, 3], "quadratic"), 0.8)
+        self.assertAlmostEqual(spearman([1, 2, 3], [1, 3, 2]), 0.5)
+
+    def test_reliability_outputs_reports_for_jsonl_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_a = tmp_path / "run_a.jsonl"
+            run_b = tmp_path / "run_b.jsonl"
+            out_dir = tmp_path / "reports"
+            run_a.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"task_id": "1", "annotation": {"score": 1, "labels": ["a"], "ok": True}}),
+                        json.dumps({"task_id": "2", "annotation": {"score": 2, "labels": ["a", "b"], "ok": False}}),
+                        json.dumps({"task_id": "3", "annotation": {"score": 3, "labels": ["b"], "ok": False}}),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            run_b.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"task_id": "1", "annotation": {"score": 1, "labels": ["a"], "ok": True}}),
+                        json.dumps({"task_id": "2", "annotation": {"score": 3, "labels": ["b"], "ok": False}}),
+                        json.dumps({"task_id": "3", "annotation": {"score": 3, "labels": ["b"], "ok": True}}),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            task_config = {
+                "evaluation": {
+                    "fields": {
+                        "score": {"type": "ordinal", "scale": [1, 2, 3]},
+                        "labels": {"type": "multilabel"},
+                        "ok": {"type": "binary"},
+                    }
+                }
+            }
+
+            result = run_reliability(str(run_a), str(run_b), task_config, str(out_dir))
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(result["paired"], 3)
+            self.assertTrue((out_dir / "summary.csv").exists())
+            self.assertTrue((out_dir / "confusion_matrices.json").exists())
+            self.assertTrue((out_dir / "problem_samples.jsonl").exists())
+            self.assertTrue((out_dir / "report.md").exists())
+            fields = {row["field"]: row for row in summary["fields"]}
+            self.assertEqual(fields["score"]["type"], "ordinal")
+            self.assertIn(fields["score"]["conclusion"], {"pass", "watch", "fail"})
+            self.assertEqual(fields["labels"]["type"], "multilabel")
+
+    def test_reliability_reads_paired_csv_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            csv_path = tmp_path / "paired.csv"
+            out_dir = tmp_path / "reports"
+            csv_path.write_text(
+                "task_id,intent_r1,intent_r2,score_r1,score_r2\n"
+                "1,buy,buy,1,1\n"
+                "2,buy,refund,2,3\n",
+                encoding="utf-8",
+            )
+            task_config = {
+                "evaluation": {
+                    "fields": {
+                        "intent": {"type": "nominal"},
+                        "score": {"type": "ordinal", "scale": [1, 2, 3]},
+                    }
+                }
+            }
+
+            result = run_reliability_csv_pairs(str(csv_path), task_config, str(out_dir))
+
+            self.assertEqual(result["paired"], 2)
+            self.assertTrue((out_dir / "summary.json").exists())
 
 
 if __name__ == "__main__":

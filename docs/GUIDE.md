@@ -149,6 +149,55 @@ python cli.py export --out exports
 
 Exports always pass through masking when `export.masking` is true.
 
+### Persistent Linux VM service
+
+For long-running Linux VM use, prefer systemd over a Python self-daemon:
+
+```bash
+sudo cp deploy/ap-review.service.example /etc/systemd/system/ap-review.service
+sudo cp deploy/annotation-pipeline.env.example /etc/annotation-pipeline.env
+sudo editor /etc/systemd/system/ap-review.service
+sudo editor /etc/annotation-pipeline.env
+sudo systemctl daemon-reload
+sudo systemctl enable ap-review
+sudo systemctl start ap-review
+sudo systemctl status ap-review
+journalctl -u ap-review -f
+```
+
+The template assumes `/opt/annotation-pipeline` and `.venv/bin/python`; edit `WorkingDirectory`
+and `ExecStart` for your VM path. Without root access, use `tmux` for interactive persistence.
+`setsid` is acceptable for short-lived work, but it will not restart a crashed service.
+
+## Reliability Reports
+
+Reliability reports compare two annotation runs or predictions against a gold set without writing
+to the database:
+
+```bash
+python cli.py reliability --run-a data/run_a.jsonl --run-b data/run_b.jsonl --task intent_v1 --out reports/reliability
+python cli.py reliability --pred data/model.jsonl --gold data/gold.jsonl --mode gold_eval --task intent_v1 --out reports/gold_eval
+python cli.py reliability --input data/annotations.csv --task intent_v1 --out reports/reliability
+```
+
+JSONL rows should include `task_id` and an `annotation` object. Paired CSV files should include
+`task_id` plus columns such as `intent_r1` and `intent_r2`.
+
+Optional task metadata controls field types:
+
+```yaml
+evaluation:
+  fields:
+    answer_completion_level:
+      type: ordinal
+      scale: [1, 2, 3, 4, 5]
+      thresholds: standard
+    gap_type: { type: multilabel }
+```
+
+The command writes `summary.json`, `summary.csv`, `confusion_matrices.json`,
+`problem_samples.jsonl`, and `report.md`.
+
 ## OpenClaw and DeepSeek Troubleshooting
 
 The endpoint must accept:

@@ -3,7 +3,7 @@
 The current AP workflow is documented in:
 
 - [QUICKSTART.md](QUICKSTART.md): shortest path for one real run.
-- [GUIDE.md](GUIDE.md): complete feature guide, import contract, troubleshooting, and maintenance notes.
+- [GUIDE.md](GUIDE.md): complete feature guide, import contract, reliability reports, persistent VM service, troubleshooting, and maintenance notes.
 - [ARCHITECTURE.md](ARCHITECTURE.md): implementation-level architecture notes.
 
 This file is intentionally kept as a migration pointer so old links do not teach stale behavior.

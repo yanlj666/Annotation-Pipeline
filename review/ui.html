@@ -204,10 +204,16 @@
       background: var(--surface);
     }
     .task:hover { background: #f8fbff; }
+    .task.focused {
+      background: #f8fbff;
+      outline: 2px solid rgba(29, 95, 215, .38);
+      outline-offset: -2px;
+    }
     .task.active {
       background: var(--accent-soft);
       box-shadow: inset 3px 0 0 var(--accent);
     }
+    .task.active.focused { background: #e7efff; }
     .task-top {
       display: flex;
       align-items: flex-start;
@@ -682,7 +688,7 @@
           <span>审核队列</span>
           <span id="count" class="mono"></span>
         </div>
-        <div id="tasks"></div>
+        <div id="tasks" tabindex="0" aria-label="review task queue"></div>
         <div id="pagination" class="pagination"></div>
       </aside>
 
@@ -825,6 +831,7 @@
     let allTasks = [];
     let filteredTasks = [];
     let currentPage = 1;
+    let focusedIndex = -1;
     let selectedAnnotationField = null;
     let originalAnnotationText = '';
     const pageSize = 50;
@@ -942,6 +949,10 @@
       const field = document.getElementById('annotationField').value;
       const values = selectedAnnotationValues();
       filteredTasks = allTasks.filter(task => matchesAnnotationFilter(task, field, values));
+      const selectedIndex = filteredTasks.findIndex(task => task.task_id === currentId);
+      if (selectedIndex >= 0) focusedIndex = selectedIndex;
+      else if (focusedIndex >= filteredTasks.length) focusedIndex = filteredTasks.length - 1;
+      else if (focusedIndex < 0 && filteredTasks.length) focusedIndex = 0;
       currentPage = Math.min(currentPage, Math.max(1, Math.ceil(filteredTasks.length / pageSize)));
       renderTaskPage();
     }
@@ -971,7 +982,11 @@
       document.getElementById('tasks').innerHTML = tasks.length
         ? tasks.map(renderTaskButton).join('')
         : '<div class="empty-state compact"><div><strong>没有匹配任务</strong><span>调整筛选条件后再试。</span></div></div>';
-      document.querySelectorAll('.task').forEach(btn => btn.addEventListener('click', () => loadTask(btn.dataset.id)));
+      document.querySelectorAll('.task').forEach((btn, pageIndex) => btn.addEventListener('click', () => {
+        focusedIndex = start + pageIndex;
+        loadTask(btn.dataset.id);
+      }));
+      updateTaskSelection();
       renderPagination(totalPages);
     }
 
@@ -1064,7 +1079,10 @@
       renderAnnotationPreview(task.annotation || {});
       message.textContent = '';
       validateAnnotationEditor();
-      await loadTasks();
+      updateCachedTask(task);
+      const selectedIndex = filteredTasks.findIndex(item => item.task_id === id);
+      if (selectedIndex >= 0) focusedIndex = selectedIndex;
+      updateTaskSelection();
     }
 
     function renderAnnotationPreview(annotation) {
@@ -1176,7 +1194,7 @@
         document.getElementById('annotation').value = originalAnnotationText;
         renderAnnotationPreview(annotation);
         validateAnnotationEditor();
-        await refreshAll();
+        await Promise.allSettled([loadStats(), loadFailures(), refreshCurrentTaskCard()]);
       } else {
         const body = await res.json().catch(() => ({}));
         message.textContent = body.error || '提交失败';
@@ -1276,12 +1294,74 @@
       const map = { user: '用户', assistant: '助手', system: '系统' };
       return map[role] || role || '未知';
     }
+    function updateCachedTask(task) {
+      if (!task || !task.task_id) return;
+      const slimTask = {...task};
+      delete slimTask.turns;
+      const allIndex = allTasks.findIndex(item => item.task_id === task.task_id);
+      if (allIndex >= 0) allTasks[allIndex] = {...allTasks[allIndex], ...slimTask};
+      const filteredIndex = filteredTasks.findIndex(item => item.task_id === task.task_id);
+      if (filteredIndex >= 0) filteredTasks[filteredIndex] = {...filteredTasks[filteredIndex], ...slimTask};
+    }
+    function updateTaskSelection() {
+      const start = (currentPage - 1) * pageSize;
+      document.querySelectorAll('.task').forEach((btn, pageIndex) => {
+        const globalIndex = start + pageIndex;
+        btn.classList.toggle('active', btn.dataset.id === currentId);
+        btn.classList.toggle('focused', globalIndex === focusedIndex);
+        if (globalIndex === focusedIndex) btn.scrollIntoView({block: 'nearest'});
+      });
+    }
+    function renderVisibleTaskButton(taskId) {
+      const start = (currentPage - 1) * pageSize;
+      const pageTasks = filteredTasks.slice(start, start + pageSize);
+      const pageIndex = pageTasks.findIndex(task => task.task_id === taskId);
+      if (pageIndex < 0) return;
+      const buttons = document.querySelectorAll('.task');
+      const task = pageTasks[pageIndex];
+      if (!buttons[pageIndex] || !task) return;
+      buttons[pageIndex].outerHTML = renderTaskButton(task);
+      const newButton = document.querySelectorAll('.task')[pageIndex];
+      if (newButton) {
+        newButton.addEventListener('click', () => {
+          focusedIndex = start + pageIndex;
+          loadTask(newButton.dataset.id);
+        });
+      }
+      updateTaskSelection();
+    }
+    async function refreshCurrentTaskCard() {
+      if (!currentId) return;
+      const task = await fetchJson(`/api/tasks/${encodeURIComponent(currentId)}`);
+      updateCachedTask(task);
+      renderVisibleTaskButton(currentId);
+    }
+    function handleTaskKeydown(event) {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+      if (!filteredTasks.length) return;
+      const key = event.key.toLowerCase();
+      if (event.key === 'ArrowDown' || key === 'j') {
+        event.preventDefault();
+        focusedIndex = Math.min(filteredTasks.length - 1, focusedIndex < 0 ? 0 : focusedIndex + 1);
+        currentPage = Math.floor(focusedIndex / pageSize) + 1;
+        renderTaskPage();
+      } else if (event.key === 'ArrowUp' || key === 'k') {
+        event.preventDefault();
+        focusedIndex = Math.max(0, focusedIndex < 0 ? 0 : focusedIndex - 1);
+        currentPage = Math.floor(focusedIndex / pageSize) + 1;
+        renderTaskPage();
+      } else if (event.key === 'Enter' && focusedIndex >= 0) {
+        event.preventDefault();
+        loadTask(filteredTasks[focusedIndex].task_id);
+      }
+    }
     function formatValue(value) { return typeof value === 'object' ? JSON.stringify(value) : String(value); }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
     function escapeAttr(s) { return escapeHtml(s).replace(/`/g, '&#96;'); }
 
     document.getElementById('status').addEventListener('change', loadTasks);
     document.getElementById('order').addEventListener('change', loadTasks);
+    document.getElementById('tasks').addEventListener('keydown', handleTaskKeydown);
     document.getElementById('query').addEventListener('keydown', event => {
       if (event.key === 'Enter') loadTasks();
     });
