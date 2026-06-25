@@ -68,6 +68,8 @@ def build_tasks(rows: list[dict[str, Any]], cfg: dict[str, Any]) -> list[dict[st
                 continue
             tasks.append(build_session_task(session_id, exchanges, cfg))
             continue
+        if mode == "turn_with_context" and reference_field_enabled(cfg, "next_user_query"):
+            attach_next_user_queries(exchanges)
         context: list[dict[str, str]] = []
         for exchange in exchanges:
             task = build_turn_task(exchange, cfg, context if mode == "turn_with_context" else [])
@@ -146,6 +148,28 @@ def build_session_task(session_id: str, exchanges: list[dict[str, Any]], cfg: di
         if values and all(value == values[0] for value in values):
             payload[name] = values[0]
     return {"task_id": make_task_id(session_id), "turns": turns, "payload": payload, "status": "pending"}
+
+
+def reference_field_enabled(cfg: dict[str, Any], name: str) -> bool:
+    fields = cfg.get("reference_fields", {})
+    if isinstance(fields, dict):
+        return bool(fields.get(name, False))
+    return False
+
+
+def attach_next_user_queries(exchanges: list[dict[str, Any]]) -> None:
+    for index, exchange in enumerate(exchanges):
+        next_query = ""
+        if index + 1 < len(exchanges):
+            next_query = first_user_content(exchanges[index + 1].get("turns", []))
+        exchange["payload"]["next_user_query"] = next_query
+
+
+def first_user_content(turns: list[dict[str, str]]) -> str:
+    for turn in turns:
+        if turn.get("role") == "user":
+            return _clean(str(turn.get("content", ""))).strip()
+    return ""
 
 
 def make_task_id(source_id: str) -> str:

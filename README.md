@@ -13,16 +13,25 @@ A local LLM exchange-level annotation workspace:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python cli.py serve --host 127.0.0.1 --port 8000
+python cli.py serve --host 127.0.0.1 --port 8800
 ```
 
 Windows users can run `start_review.bat`. Linux/OpenClaw VM users can run:
 
 ```bash
-HOST=0.0.0.0 PORT=8000 bash start_review.sh
+HOST=0.0.0.0 PORT=8800 bash start_review.sh
 ```
 
-Open `http://127.0.0.1:8000` for the workspace.
+OpenClaw sandbox users can use the managed helper:
+
+```bash
+bash scripts/ap_openclaw.sh serve start
+bash scripts/ap_openclaw.sh serve status
+```
+
+See `docs/OPENCLAW_SANDBOX.md` for watchdog, logs, and label recovery commands.
+
+Open `http://127.0.0.1:8800` for the workspace.
 
 ## Core Commands
 
@@ -33,7 +42,7 @@ python cli.py ingest path/to/input.csv
 python cli.py preflight --task intent_v1 --sample 1 --strict
 python cli.py label --task intent_v1 --strict
 python cli.py label --status failed
-python cli.py serve --host 127.0.0.1 --port 8000
+python cli.py serve --host 127.0.0.1 --port 8800
 python cli.py export --out exports
 python cli.py gold-eval path/to/gold.jsonl
 python cli.py eval-batch status

@@ -114,6 +114,8 @@ class LLMClient:
                 result[key] = []
             elif typ == "object":
                 result[key] = {}
+            elif "enum" in spec and isinstance(spec["enum"], list) and spec["enum"]:
+                result[key] = spec["enum"][0]
             else:
                 result[key] = "mock"
         return result

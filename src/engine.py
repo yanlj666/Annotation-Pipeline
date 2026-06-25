@@ -292,7 +292,8 @@ async def run_preflight(
 async def _label_once(client: LLMClient, task_config: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
     prompt = task_config["prompt"]
     turns = json.dumps(task["turns"], ensure_ascii=False, indent=2)
-    payload = json.dumps(task["payload"], ensure_ascii=False, indent=2)
+    prompt_values = resolve_prompt_vars(task_config, task)
+    payload = json.dumps(display_payload_for_prompt(task["payload"], hidden_prompt_payload_fields(task_config)), ensure_ascii=False, indent=2)
     schema = json.dumps(task_config["output_schema"], ensure_ascii=False, indent=2)
     values = {
         "turns": turns,
@@ -300,6 +301,7 @@ async def _label_once(client: LLMClient, task_config: dict[str, Any], task: dict
         "schema": schema,
         "task_name": str(task_config.get("name", "")),
         "task_description": str(task_config.get("description", "")),
+        **{key: str(value) for key, value in prompt_values.items()},
     }
     messages = [
         {"role": "system", "content": render_prompt_template(prompt["system"], **values)},
@@ -318,6 +320,55 @@ def render_prompt_template(template: str, **values: str) -> str:
     for key, value in values.items():
         rendered = rendered.replace("{" + key + "}", value)
     return rendered
+
+
+def resolve_prompt_vars(task_config: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    prompt_vars = task_config.get("prompt_vars", {})
+    if not isinstance(prompt_vars, dict):
+        return result
+    for name, spec in prompt_vars.items():
+        if not isinstance(spec, dict):
+            continue
+        source = str(spec.get("source", "")).strip()
+        default = spec.get("default", "")
+        result[str(name)] = get_task_value(task, source, default)
+    return result
+
+
+def display_payload_for_prompt(payload: dict[str, Any], hidden_fields: set[str]) -> dict[str, Any]:
+    display = dict(payload)
+    for name in hidden_fields:
+        display.pop(name, None)
+    return display
+
+
+def hidden_prompt_payload_fields(task_config: dict[str, Any]) -> set[str]:
+    hidden: set[str] = set()
+    prompt_vars = task_config.get("prompt_vars", {})
+    if not isinstance(prompt_vars, dict):
+        return hidden
+    for name, spec in prompt_vars.items():
+        if isinstance(spec, dict) and spec.get("hide_from_payload"):
+            source = str(spec.get("source", "")).strip()
+            parts = source.split(".")
+            if len(parts) == 2 and parts[0] == "payload":
+                hidden.add(parts[1])
+            else:
+                hidden.add(str(name))
+    return hidden
+
+
+def get_task_value(task: dict[str, Any], source: str, default: Any = "") -> Any:
+    if not source:
+        return default
+    value: Any = task
+    for part in source.split("."):
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return default
+    return value
 
 
 def resolve_sampling_config(config: dict[str, Any], task_config: dict[str, Any]) -> dict[str, Any]:
@@ -367,6 +418,33 @@ def validate_output(annotation: dict[str, Any], schema: dict[str, Any]) -> None:
                 raise ValueError(f"{key} enum must be array")
             if value not in enum:
                 raise ValueError(f"{key} must be one of {enum}; got {value!r}")
+        if typ == "array":
+            validate_array_items(key, value, spec)
+
+
+def validate_array_items(key: str, value: list[Any], spec: dict[str, Any]) -> None:
+    items = spec.get("items")
+    if not isinstance(items, dict):
+        return
+    item_type = items.get("type")
+    item_enum = items.get("enum")
+    if item_enum is not None and not isinstance(item_enum, list):
+        raise ValueError(f"{key} items enum must be array")
+    for index, item in enumerate(value):
+        if item_type == "string" and not isinstance(item, str):
+            raise ValueError(f"{key}[{index}] must be string")
+        if item_type == "boolean" and not isinstance(item, bool):
+            raise ValueError(f"{key}[{index}] must be boolean")
+        if item_type == "integer" and not (isinstance(item, int) and not isinstance(item, bool)):
+            raise ValueError(f"{key}[{index}] must be integer")
+        if item_type == "number" and not (isinstance(item, int | float) and not isinstance(item, bool)):
+            raise ValueError(f"{key}[{index}] must be number")
+        if item_type == "object" and not isinstance(item, dict):
+            raise ValueError(f"{key}[{index}] must be object")
+        if item_type == "array" and not isinstance(item, list):
+            raise ValueError(f"{key}[{index}] must be array")
+        if item_enum is not None and item not in item_enum:
+            raise ValueError(f"{key}[{index}] must be one of {item_enum}; got {item!r}")
 
 
 def _parse_statuses(statuses: list[str] | tuple[str, ...] | str) -> list[str]:

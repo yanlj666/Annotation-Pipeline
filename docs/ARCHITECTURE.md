@@ -30,7 +30,7 @@ Stable internal fields:
 - `task_id`: stable task key.
 - `turns`: current labeling object.
 - `status`: task state.
-- `payload`: passthrough business fields plus AP reference fields such as `session_id`, `exchange_id`, `exchange_time`, and optional `context_turns`.
+- `payload`: passthrough business fields plus AP reference fields such as `session_id`, `exchange_id`, `exchange_time`, optional `context_turns`, and opt-in derived fields such as `next_user_query`.
 
 Business-specific imported fields must stay in `payload`. Python code should not hard-code business column names.
 
@@ -44,11 +44,13 @@ Business-specific imported fields must stay in `payload`. Python code should not
 
 `turn_mode`, `turn_mode: single`, `turn_mode: conversation`, and `conversation_id` are historical configuration names. Import rejects `turn_mode` and tells the user to migrate to `task_mode`.
 
+Task configs may define `prompt_vars` to lift selected task values, such as `payload.next_user_query`, into explicit prompt placeholders. When `hide_from_payload` is true for a payload field, prompt rendering removes that field from the regular `{payload}` block while keeping the explicit placeholder available.
+
 ## Module Boundaries
 
 - `cli.py`: command entry points and config loading.
 - `src/ingest.py`: import mapping validation, exchange normalization, session grouping, sorting, and idempotent task creation.
-- `src/engine.py`: batch labeling, preflight, rate limiting, retries, failure logging, output schema validation, and enum validation.
+- `src/engine.py`: batch labeling, preflight, rate limiting, retries, failure logging, prompt rendering, output schema validation, and enum validation.
 - `src/llm_client.py`: OpenAI-compatible requests, model thinking mode payloads, usage capture, and local mock behavior.
 - `src/store.py`: SQLite persistence for tasks and status summaries.
 - `review/server.py`: workspace HTTP API.

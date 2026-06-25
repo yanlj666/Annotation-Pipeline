@@ -6,6 +6,8 @@ import_mapping:
     exchange_id: "exchange_id"
     exchange_time: "exchange_time"
     turns: "turns"
+  reference_fields:
+    next_user_query: true
   passthrough:
     - "用户ID"
     - "渠道"

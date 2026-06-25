@@ -6,7 +6,16 @@ import unittest
 from pathlib import Path
 
 from src.batch import archive_batch, batch_status, create_batch, merge_exports
-from src.engine import render_prompt_template, resolve_sampling_config, run_labeling, run_preflight, validate_output
+from src.engine import (
+    display_payload_for_prompt,
+    hidden_prompt_payload_fields,
+    render_prompt_template,
+    resolve_prompt_vars,
+    resolve_sampling_config,
+    run_labeling,
+    run_preflight,
+    validate_output,
+)
 from src.export import export_reviewed
 from src.ingest import ingest_file, normalize_row, parse_turns
 from src.llm_client import LLMClient
@@ -97,6 +106,36 @@ class IngestRegressionTests(unittest.TestCase):
 
         self.assertEqual(task["turns"], [{"role": "user", "content": "second"}])
         self.assertEqual(task["payload"]["context_turns"], [{"role": "user", "content": "first"}])
+
+    def test_ingest_can_attach_next_user_query_reference_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            csv_path = tmp_path / "input.csv"
+            csv_path.write_text(
+                "session_id,exchange_id,exchange_time,turns\n"
+                's1,s1_2,2026-01-01T10:02:00,"[{""role"": ""assistant"", ""content"": ""middle""}, {""role"": ""user"", ""content"": ""second question""}]"\n'
+                's1,s1_1,2026-01-01T10:01:00,"[{""role"": ""user"", ""content"": ""first question""}]"\n'
+                's1,s1_3,2026-01-01T10:03:00,"[{""role"": ""assistant"", ""content"": ""no user here""}]"\n',
+                encoding="utf-8",
+            )
+            store = Store(str(tmp_path / "pipeline.db"))
+            mapping = {
+                "import_mapping": {
+                    "source_format": "csv",
+                    "task_mode": "turn_with_context",
+                    "fields": FIELDS,
+                    "reference_fields": {"next_user_query": True},
+                }
+            }
+
+            ingest_file(str(csv_path), mapping, store)
+            first = store.get_task("s1_1")
+            second = store.get_task("s1_2")
+            third = store.get_task("s1_3")
+
+        self.assertEqual(first["payload"]["next_user_query"], "second question")
+        self.assertEqual(second["payload"]["next_user_query"], "")
+        self.assertEqual(third["payload"]["next_user_query"], "")
 
     def test_session_mode_creates_one_task_per_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -233,6 +272,24 @@ class PromptRenderingRegressionTests(unittest.TestCase):
         self.assertIn("sample []", rendered)
         self.assertIn("{unknown}", rendered)
 
+    def test_prompt_vars_can_lift_and_hide_payload_reference_fields(self) -> None:
+        task_config = {
+            "prompt_vars": {
+                "next_user_query": {
+                    "source": "payload.next_user_query",
+                    "default": "",
+                    "hide_from_payload": True,
+                }
+            }
+        }
+        task = {"payload": {"next_user_query": "follow up", "session_id": "s1"}}
+
+        values = resolve_prompt_vars(task_config, task)
+        payload = display_payload_for_prompt(task["payload"], hidden_prompt_payload_fields(task_config))
+
+        self.assertEqual(values, {"next_user_query": "follow up"})
+        self.assertEqual(payload, {"session_id": "s1"})
+
     def test_task_sampling_overrides_model_sampling(self) -> None:
         sampling = resolve_sampling_config(
             {"model": {"temperature": 0.4, "top_p": 0.8, "seed": 7}},
@@ -254,6 +311,27 @@ class ValidationRegressionTests(unittest.TestCase):
         validate_output({"role_level": "L6级参谋"}, schema)
         with self.assertRaisesRegex(ValueError, "must be one of"):
             validate_output({"role_level": "L6级"}, schema)
+
+    def test_array_items_must_match_type_and_enum(self) -> None:
+        schema = {"gap_type": {"type": "array", "items": {"type": "string", "enum": ["无", "缺下一步"]}}}
+
+        validate_output({"gap_type": ["无"]}, schema)
+        with self.assertRaisesRegex(ValueError, "gap_type\\[0\\] must be one of"):
+            validate_output({"gap_type": ["越界"]}, schema)
+        with self.assertRaisesRegex(ValueError, "gap_type\\[0\\] must be string"):
+            validate_output({"gap_type": [1]}, schema)
+
+    def test_mock_annotation_uses_enum_values(self) -> None:
+        schema = {
+            "turn_type": {"type": "string", "enum": ["购物相关", "不适用"]},
+            "gap_type": {"type": "array", "items": {"type": "string", "enum": ["无"]}},
+        }
+
+        annotation = LLMClient._mock_annotation(schema)
+
+        self.assertEqual(annotation["turn_type"], "购物相关")
+        self.assertEqual(annotation["gap_type"], [])
+        validate_output(annotation, schema)
 
 
 class StoreRegressionTests(unittest.TestCase):

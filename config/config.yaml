@@ -19,7 +19,7 @@ engine:
   log_dir: "logs"
   alert_failure_rate: 0.3
   alert_consecutive_failures: 5
-task: "intent_v1"
+task: "multiturn_eval_v0.1"
 database: "data/pipeline.db"
 export:
   masking: true

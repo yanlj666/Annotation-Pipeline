@@ -18,7 +18,7 @@ UI_PATH = Path(__file__).with_name("ui.html")
 def run_server(
     db_path: str,
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = 8800,
     output_schema: dict | None = None,
     config: dict | None = None,
     task_config: dict | None = None,

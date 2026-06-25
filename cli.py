@@ -66,13 +66,13 @@ def main() -> None:
 
     review = sub.add_parser("review", parents=[config_parent])
     review.add_argument("--host", default="127.0.0.1")
-    review.add_argument("--port", type=int, default=8000)
+    review.add_argument("--port", type=int, default=8800)
     review.add_argument("--task")
     review.add_argument("--open", action="store_true", help="open the review page in the default browser")
 
     serve = sub.add_parser("serve", parents=[config_parent], help="start the full web workspace")
     serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--port", type=int, default=8800)
     serve.add_argument("--task")
     serve.add_argument("--open", action="store_true", help="open the workspace in the default browser")
 

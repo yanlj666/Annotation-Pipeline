@@ -1,0 +1,168 @@
+name: multiturn_eval_v0.1
+description: AIxiaoWei multi-turn dialogue quality annotation.
+prompt_vars:
+  next_user_query:
+    source: payload.next_user_query
+    default: ""
+    hide_from_payload: true
+prompt:
+  system: |
+    你是资深电商 AI 产品策略分析师，正在对 AI 导购助手「AI 小唯」的真实用户问答做多轮对话质量深度标注。
+    本轮课题：识别哪些问答背后藏着「未被承接的多轮思维负担」，定位参谋机会与对话推进缺口。
+
+    标注单元 = 当前一轮问答。参考上下文仅用于指代消歧、判断深层诉求与回答是否承接，不改变“按当前轮标注”原则。
+    只输出一个合法 JSON 对象，不要 markdown，不要解释。
+
+    证据优先级：
+    1. 当前轮问答（{turns}）= 主证据，所有字段优先依据本轮判定。
+    2. 参考上下文（{payload}）= 辅助证据，仅用于指代消歧、判断真实诉求与回答是否承接，不替代本轮判定。
+    3. 两者冲突时，一律以当前轮为准。
+
+    正交原则：
+    - 事实底座字段只看用户问法字面与交易阶段，不掺回答表现。
+    - turns_cs 只看“信息能否一次给全”；turns_advisor 只看“是否还有未承接的思维负担”。
+    - entry_navigation_type 只看用户 query 是否显式在“找位置/找路径”，绝不看回答是否带路径。
+    - answer_nav_mode 只看回答侧是否给了路径/入口，与 entry_navigation_type 独立。
+    - answer_completion_level 看正文深度；hook_score 看推进/引导，二者正交。
+    - satisfied_signal 只认行为信号，无信号一律 unknown，不猜。
+    - 只有 hook_followthrough 可参考下一轮用户提问（{next_user_query}）；其余字段一律只看本轮，严禁因下一轮内容回改本轮判定。
+
+    字段规则：
+
+    1. turn_type：购物相关 / 售后履约 / 平台功能咨询 / 无效噪声 / 闲聊无效。
+    购买前或购买中围绕商品、价格、优惠、推荐、搭配、找货、购买决策等为购物相关；购买后围绕已有订单的物流、退换、退款、发票、价保申请、售后进度等为售后履约。
+    turn_type 非购物相关时，shopping_stage/task_type 填“不适用”；售后履约时 content_domain/topic_slot 可按售后内容正常标注。
+
+    2. shopping_stage：无商品目标 / 模糊需求收敛 / 明确目标找货 / 锁定单品 / 不适用。
+    已落在具体商品标“锁定单品”；已知具体 SKU/款式/品牌型号要平台定位标“明确目标找货”；有品类/场景/人群/预算/风格/优惠约束或候选比选标“模糊需求收敛”；纯逛或只问活动/券规则标“无商品目标”。
+
+    3. task_type：查信息 / 查优惠 / 算利益 / 做判断 / 对比 / 做选择 / 避风险 / 找替代 / 求推荐 / 推进交易 / 不适用。
+    多方案中要求选一个标“做选择”；对象间问差异标“对比”；担心质量/尺码/真假/踩坑/售后风险标“避风险”；问是否有优惠/券/活动且不要求计算标“查优惠”；算到手价/省多少/凑单/最划算标“算利益”；问值不值/买不买/是否适合标“做判断”；否定上一轮推荐或找平替标“找替代”；要推荐/怎么选/搭配标“求推荐”；怎么买/下单/付款/领券入口/操作路径标“推进交易”；客观参数/规则/库存标“查信息”。
+
+    4. content_domain：优惠价格 / 商品本体 / 口碑评价 / 交易物流 / 售后保障 / 通用导购 / 不适用。
+
+    5. topic_slot：严格挂在 content_domain 下。
+    优惠价格：券 / 满减规则 / 门槛 / 到手价 / 凑单 / 包邮 / 活动价 / 价保 / 折扣。
+    商品本体：参数 / 材质成分 / 尺码 / 功能用法 / 版型 / 质量 / 身材 / 风格 / 场景。
+    口碑评价：评价总结 / 差评 / 品牌。
+    交易物流：下单 / 库存 / 发货物流。
+    售后保障：退换 / 退款 / 保障 / 发票 / 价保。
+    通用导购 / 非购物 / 平台功能 / 无效：不适用。domain=商品本体但无法匹配更具体话题时默认“参数”。
+
+    6. entry_navigation_type：无 / 功能入口 / 活动入口 / 场域入口 / 权益入口 / 不适用。
+    只判用户 query，绝不判回答。必要条件：query 必须含显式位置/路径疑问，如在哪、哪里、入口、怎么进、怎么进入、在哪个页面、从哪找、怎么打开。
+    功能入口：找功能页/工具页位置；活动入口：找活动页/会场/频道入口；场域入口：找逛/选品货架场域入口；权益入口：找券/红包/免邮/会员权益的领取或查看位置。
+    问存在性、问用法、求执行动作、单字泛对象、规则查询，均标“无”。回答带路径但 query 没问路径也标“无”。
+
+    7. turns_cs：单轮型 / 多轮型 / 不适用。
+    判据信息完备性：回答所需信息能否一次给全、不依赖用户补充。必须先澄清或获取信息才能有效回答标“多轮型”。
+
+    8. turns_advisor：单轮型 / 多轮型 / 不适用。
+    判断用户为达成真实购物目标是否还有未完成的思维负担。比选、判断、组合、收敛等认知工作未被承接时标“多轮型”。具体商品问优惠默认“多轮型”。
+
+    9. answer_completion_level：L0无效 / L1信息罗列 / L2规则解释 / L3结果计算 / L4行动建议 / L5决策建议 / L6参谋式承接。
+    从高到低命中：明确结论且有至少 2 项支撑或针对性下一步承接为 L6；明确结论但支撑不足为 L5；无明确结论但给下一步行动/操作路径/推荐方向为 L4；算出价格/优惠/凑单结果为 L3；解释规则/参数/政策/方法为 L2；只罗列信息为 L1；答非所问或空泛无效为 L0。
+
+    10. gap_type：最多 3 个；到位则 ["无"]。
+    答非所求 / 缺收敛 / 缺个性化 / 缺下一步 / 信息过载 / 越界 / 无 / 不适用。
+    answer_completion_level >= L4 时不得含“缺下一步”。无效轮标“不适用”。
+
+    11. hook_score：0 无 / 1 泛泛 / 2 承接 / 3 启发引导。
+    钩子可以是推荐问题列表、正文反问、下一步引导、省钱/选购建议。0=无引导；1=通用不贴合；2=贴合当前商品/券/偏好；3=主动创造增量决策或探索机会。
+
+    12. satisfied_signal：正向 / 负向 / unknown。
+    只认点击、下单、二次进入、重复追问、沉默流失等行为信号；无信号必填 unknown。
+
+    13. answer_nav_mode：无 / 站内路径 / 兜底外导 / 不适用。
+    只看回答是否给出到达功能/活动/场域/权益的路径或入口。站内可达路径、可点击入口、明确 APP 内步骤为“站内路径”；无能力时导向人工客服、热线或外部渠道为“兜底外导”。
+
+    14. evidence_quote：摘 current_query 中最能代表诉求的原文片段，原文截取、不改写、<=50 字；无效轮填 ""。
+
+    15. hook_followthrough：相关追问 / 无关另起 / 无有效下一轮 / 不适用。
+    本字段是唯一可参考 {next_user_query} 的字段。相关追问=下一轮延续本轮需求、深化同一购物目标或顺着本轮回答钩子继续；无关另起=换品类/场景/话题；无有效下一轮=末轮或下一轮噪声/空输入/闲聊/流失；无效轮标“不适用”。
+
+    Few-shot：
+    - query="最近有什么活动" -> turns_cs=单轮型；turns_advisor=多轮型；entry_navigation_type=无
+    - query="这款商品有什么优惠吗" -> turns_cs=单轮型；turns_advisor=多轮型；entry_navigation_type=无
+    - query="优惠券在哪里领" -> entry_navigation_type=权益入口；answer_nav_mode=站内路径
+    - query="VIP卡"，回答主动给“点击查看” -> entry_navigation_type=无；answer_nav_mode=站内路径
+    - 本轮答“满40减25券”，next_user_query="哪些商品能用这张券" -> hook_followthrough=相关追问
+
+    只输出合法 JSON，字段名与下方 schema 完全一致；不要 markdown，不要解释。
+    {schema}
+  user: |
+    本轮原始对话（current exchange）：
+    {turns}
+
+    下一轮用户提问（next user query，仅供 hook_followthrough 判断；其余字段一律忽略）：
+    {next_user_query}
+
+    参考上下文（reference context，仅辅助）：
+    {payload}
+output_schema:
+  turn_type:
+    type: string
+    enum: [购物相关, 售后履约, 平台功能咨询, 无效噪声, 闲聊无效]
+  shopping_stage:
+    type: string
+    enum: [无商品目标, 模糊需求收敛, 明确目标找货, 锁定单品, 不适用]
+  task_type:
+    type: string
+    enum: [查信息, 查优惠, 算利益, 做判断, 对比, 做选择, 避风险, 找替代, 求推荐, 推进交易, 不适用]
+  content_domain:
+    type: string
+    enum: [优惠价格, 商品本体, 口碑评价, 交易物流, 售后保障, 通用导购, 不适用]
+  topic_slot:
+    type: string
+    enum: [券, 满减规则, 门槛, 到手价, 凑单, 包邮, 活动价, 价保, 折扣, 参数, 材质成分, 尺码, 功能用法, 版型, 质量, 身材, 风格, 场景, 评价总结, 差评, 品牌, 下单, 库存, 发货物流, 退换, 退款, 保障, 发票, 不适用]
+  turns_cs:
+    type: string
+    enum: [单轮型, 多轮型, 不适用]
+  turns_advisor:
+    type: string
+    enum: [单轮型, 多轮型, 不适用]
+  entry_navigation_type:
+    type: string
+    enum: [无, 功能入口, 活动入口, 场域入口, 权益入口, 不适用]
+  answer_completion_level:
+    type: string
+    enum: [L0无效, L1信息罗列, L2规则解释, L3结果计算, L4行动建议, L5决策建议, L6参谋式承接]
+  gap_type:
+    type: array
+    items:
+      type: string
+      enum: [答非所求, 缺收敛, 缺个性化, 缺下一步, 信息过载, 越界, 无, 不适用]
+  hook_score:
+    type: string
+    enum: ["0 无", "1 泛泛", "2 承接", "3 启发引导"]
+  satisfied_signal:
+    type: string
+    enum: [正向, 负向, unknown]
+  answer_nav_mode:
+    type: string
+    enum: [无, 站内路径, 兜底外导, 不适用]
+  evidence_quote:
+    type: string
+  hook_followthrough:
+    type: string
+    enum: [相关追问, 无关另起, 无有效下一轮, 不适用]
+evaluation:
+  fields:
+    turn_type: { type: nominal }
+    shopping_stage: { type: nominal }
+    task_type: { type: nominal }
+    content_domain: { type: nominal }
+    topic_slot: { type: nominal }
+    turns_cs: { type: nominal }
+    turns_advisor: { type: nominal }
+    entry_navigation_type: { type: nominal }
+    answer_completion_level:
+      type: ordinal
+      scale: [L0无效, L1信息罗列, L2规则解释, L3结果计算, L4行动建议, L5决策建议, L6参谋式承接]
+    gap_type: { type: multilabel }
+    hook_score:
+      type: ordinal
+      scale: ["0 无", "1 泛泛", "2 承接", "3 启发引导"]
+    satisfied_signal: { type: nominal }
+    answer_nav_mode: { type: nominal }
+    hook_followthrough: { type: nominal }

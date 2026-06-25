@@ -8,4 +8,4 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 
 ".venv/bin/python" -m pip install -r requirements.txt
-".venv/bin/python" cli.py serve --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"
+".venv/bin/python" cli.py serve --host "${HOST:-127.0.0.1}" --port "${PORT:-8800}"

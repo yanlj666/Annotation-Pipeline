@@ -33,6 +33,8 @@ import_mapping:
     exchange_id: "exchange_id"
     exchange_time: "exchange_time"
     turns: "turns"
+  reference_fields:
+    next_user_query: true
   passthrough:
     - "user_id"
     - "channel"
@@ -55,6 +57,20 @@ Required fields:
 ```
 
 `passthrough` fields are copied into `payload`. Python code must not hard-code business column names.
+
+`reference_fields.next_user_query: true` asks AP to derive `payload.next_user_query` for
+`turn_with_context` tasks. AP sorts each `session_id` by `exchange_time`, stores the next
+exchange's first user message on the current task, and stores an empty string on the final
+exchange. Tasks can expose this reference through `prompt_vars` while hiding it from the
+regular `{payload}` prompt block:
+
+```yaml
+prompt_vars:
+  next_user_query:
+    source: payload.next_user_query
+    default: ""
+    hide_from_payload: true
+```
 
 `turn_mode` is no longer supported. Use `task_mode`.
 
